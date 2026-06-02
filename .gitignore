@@ -1,0 +1,73 @@
+# ==========================================
+# MoE Transformer — Git Ignore Configuration
+# ==========================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# --- 가상환경 (Virtual Environment) ---
+.venv/
+venv/
+ENV/
+
+# --- 데이터셋 및 캐시 (Datasets & Cache) ---
+# 대용량 바이너리 데이터셋 파일 차단
+*.npy
+*.npz
+*.arrow
+# Hugging Face 데이터셋 캐시 디렉토리
+.cache/
+
+# --- 모델 가중치 및 실험 체크포인트 (Model Checkpoints) ---
+# 학습 가중치 파일 차단
+*.pt
+*.pth
+*.ckpt
+*.bin
+
+# --- 실험 로그 및 결과 리포트 (Logs & Reports) ---
+*.jsonl
+# 로컬 스모크 테스트용 임시 디렉토리 차단
+test_project/
+drive_mock/
+tokenizer/test_output/
+train/test_data/
+# wandb 실행 로그 폴더
+wandb/
+
+# --- 시스템 및 IDE (System & IDE) ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
