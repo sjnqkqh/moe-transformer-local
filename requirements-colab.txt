@@ -1,0 +1,26 @@
+# ============================================================
+# MoE Transformer — Colab Requirements
+# 용도: Google Colab A100 환경에서 실행. Cell 0에서 설치.
+#
+# ⚠️ 중요: accelerate보다 먼저 torch를 CUDA index로 설치하세요
+#
+#   # 1. torch 고정 (반드시 먼저)
+#   !pip install torch --index-url https://download.pytorch.org/whl/cu124 -q --upgrade
+#
+#   # 2. 나머지
+#   !pip install -r requirements-colab.txt -q
+#
+# Colab 기본 탑재 (설치 불필요):
+#   Python 3.10, numpy, matplotlib, tqdm
+#
+# Colab 기본 탑재 BUT CPU-only 덮어쓰기 위험:
+#   torch ← CUDA index로 재설치 필수
+#
+# Colab 미탑재 (pip install 필요):
+#   accelerate, datasets, tokenizers, wandb
+# ============================================================
+
+accelerate>=0.28.0
+datasets>=2.18.0
+tokenizers>=0.19.0
+wandb                        # 선택 — Loss 곡선 원격 로깅

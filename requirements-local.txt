@@ -1,0 +1,21 @@
+# ============================================================
+# MoE Transformer — Local Dev Requirements (M2 Pro)
+# 용도: Colab 업로드 전 코드 로직 검증 (CPU 모드)
+# 설치: cd moe-transformer-local && uv pip install -r requirements-local.txt
+# 실행: .venv/bin/python poc_smoke_test.py
+# ============================================================
+
+# ---------- 핵심 (필수) ----------
+torch>=2.0.0                # PyTorch. Colab에 맞출 필요 없음 — 로컬은 CPU/MPS 검증용
+accelerate>=0.28.0          # HuggingFace Accelerate (단일 GPU + BF16 관리)
+transformers>=4.40.0        # PreTrainedTokenizerFast 래핑용
+datasets>=2.18.0            # FineWeb-edu 로드
+tokenizers>=0.19.0          # BPE 토크나이저 직접 학습
+
+# ---------- 유틸리티 ----------
+numpy                       # 텐서 통계/분석
+matplotlib                  # Loss 곡선 시각화
+tqdm                        # 진행바
+
+# ---------- Colab 전용 (로컬 불필요) ----------
+# wandb                      # ← 로컬에서는 선택. Colab에서만 필요
