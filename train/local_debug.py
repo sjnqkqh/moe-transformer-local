@@ -8,6 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from model.moe_layer import MoETransformerBlock
 from model.moe_transformer import MoETransformer
+from model.config import MoETransformerConfig
 
 
 def main():
@@ -21,7 +22,7 @@ def main():
     # 청사진(Blueprint)에 정의된 사양대로 모델의 레이어 개수와 가중치 모양을 할당합니다.
     # 이 과정에서 내부적으로 RMSNorm, RoPE 주파수 버퍼, Attention, SwiGLU FFN들이 결합됩니다.
     print("\n[1/5] Instantiating model...")
-    model = MoETransformer(
+    config = MoETransformerConfig(
         vocab_size=32000,  # BPE 토크나이저 어휘 사전 크기
         d_model=768,  # 토큰 임베딩 차원 크기
         n_layers=8,  # 총 레이어 층수 (교차 배치)
@@ -30,7 +31,9 @@ def main():
         num_experts=4,  # MoE 레이어당 전문가 개수
         k=2,  # Top-2 라우팅 활성화 수
         max_seq_len=1024,  # 최대 컨텍스트 윈도우 크기
+        dropout=0.1  # 기본 드롭아웃 확률 설정
     )
+    model = MoETransformer(config)
     print("    ✅ Model instantiated successfully.")
 
     # -------------------------------------------------------------------------
@@ -181,15 +184,15 @@ def main():
     print(f"    - Tracked {len(selected_indices)} MoE layers.")
     for layer_idx, indices in enumerate(selected_indices):
         # indices shape: (128, 2)
-        expert_counts = torch.zeros(4)
-        for val in indices.view(-1):
-            expert_counts[val.item()] += 1
+        num_experts = model.config.num_experts
+        expert_counts = torch.bincount(indices.view(-1), minlength=num_experts).float()
+        expert_counts = expert_counts[:num_experts]
 
         total_selections = expert_counts.sum().item()
         print(
             f"      Layer {layer_idx * 2} selections (total {int(total_selections)}):"
         )
-        for exp_id in range(4):
+        for exp_id in range(num_experts):
             count = int(expert_counts[exp_id].item())
             pct = (count / total_selections) * 100
             print(f"        Expert {exp_id}: {count} ({pct:.1f}%)")

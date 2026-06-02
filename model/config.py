@@ -1,0 +1,17 @@
+from dataclasses import dataclass
+
+@dataclass
+class MoETransformerConfig:
+    """
+    MoE Transformer 모델의 모든 하이퍼파라미터 설정을 한곳에 모아 관리하는 구성 클래스.
+    """
+    vocab_size: int = 32000      # BPE 토크나이저 어휘 사전 크기
+    d_model: int = 768           # 토큰 임베딩 및 어텐션 은닉 차원 크기
+    n_layers: int = 8            # 전체 레이어 층수 (MoE와 Dense 교차 배치)
+    n_heads: int = 8             # 멀티헤드 어텐션 헤드 개수
+    d_ff: int = 2048             # FFN (SwiGLU) 중간 은닉 차원 크기
+    num_experts: int = 4         # MoE 레이어당 전문가 개수
+    k: int = 2                   # 토큰당 라우팅 활성화 수 (Top-k)
+    max_seq_len: int = 1024      # 최대 컨텍스트 윈도우 크기
+    dropout: float = 0.1         # 어텐션 및 FFN에 적용할 드롭아웃 확률
+    eps: float = 1e-6            # RMSNorm 수치 안정성을 위한 상수

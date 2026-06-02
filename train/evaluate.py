@@ -12,19 +12,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from model.moe_transformer import MoETransformer
 from model.moe_layer import MoETransformerBlock
-
-class NumpyDataset(Dataset):
-    def __init__(self, npy_path: str):
-        # mmap_mode="r"을 활성화하여 필요한 인덱스의 데이터 블록만 디스크에서 즉석 로드합니다.
-        self.data = np.load(npy_path, mmap_mode="r")
-        
-    def __len__(self):
-        return len(self.data)
-        
-    def __getitem__(self, idx):
-        # inputs와 labels 모두 동일 시퀀스로 피딩합니다.
-        x = torch.tensor(self.data[idx], dtype=torch.long)
-        return x, x
+from model.config import MoETransformerConfig
+from train.utils import NumpyDataset
 
 def evaluate(args):
     print("=" * 60)
@@ -35,7 +24,7 @@ def evaluate(args):
     # [1단계] 검증용 모델 인스턴스 객체 생성
     # -------------------------------------------------------------------------
     print("Instantiating model...")
-    model = MoETransformer(
+    config = MoETransformerConfig(
         vocab_size=32000,
         d_model=768,
         n_layers=8,
@@ -43,8 +32,10 @@ def evaluate(args):
         d_ff=2048,
         num_experts=4,
         k=2,
-        max_seq_len=args.block_size
+        max_seq_len=args.block_size,
+        dropout=0.0  # 평가 시에는 드롭아웃 비활성화
     )
+    model = MoETransformer(config)
     
     # -------------------------------------------------------------------------
     # [2단계] 디스크로부터 최근 가중치 체크포인트(.pt) 자동 스캔 및 로드
@@ -150,10 +141,9 @@ def evaluate(args):
     # -------------------------------------------------------------------------
     # 수집한 전문가 할당 기록 병합
     all_indices = torch.cat(selected_indices, dim=0)
-    expert_counts = torch.zeros(4)
-    for idx in all_indices.view(-1):
-        if idx.item() < 4:
-            expert_counts[idx.item()] += 1
+    num_experts = model.config.num_experts
+    expert_counts = torch.bincount(all_indices.view(-1), minlength=num_experts).float()
+    expert_counts = expert_counts[:num_experts]
             
     total_selections = expert_counts.sum().item()
     expert_percentages = (expert_counts / total_selections).tolist()

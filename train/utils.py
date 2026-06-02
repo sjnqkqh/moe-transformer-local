@@ -2,7 +2,9 @@ import os
 import glob
 import json
 import datetime
+import numpy as np
 import torch
+from torch.utils.data import Dataset
 
 def save_checkpoint(ckpt_dir: str, model, optimizer, scheduler, step: int, loss: float, name: str):
     """
@@ -127,3 +129,22 @@ def complete_experiment(log_dir: str, run_id: str, final_metrics: dict):
         
     with open(index_path, "w", encoding="utf-8") as f:
         json.dump(index, f, ensure_ascii=False, indent=2)
+
+class NumpyDataset(Dataset):
+    """
+    mmap_mode="r" 모드로 파일 시스템에서 npy 데이터를 지연 적재(Lazy Load)하는 커스텀 데이터셋.
+    """
+    def __init__(self, npy_path: str):
+        # 대용량 바이너리 파일을 통째로 메모리에 로드하지 않고 mmap_mode="r" (메모리 맵) 모드로 접근합니다.
+        # 필요할 때 필요한 만큼만 하드디스크에서 읽어오므로 메모리 낭비를 줄입니다.
+        self.data = np.load(npy_path, mmap_mode="r")
+        
+    def __len__(self):
+        return len(self.data)
+        
+    def __getitem__(self, idx):
+        # 입력(input_ids)과 타겟 레이블(labels)을 같은 토큰 시퀀스로 만듭니다.
+        # 디코더 전용 트랜스포머 모델의 forward 함수 내부에서 자동으로 한 칸씩 밀어서(Shift) Loss를 계산해 줍니다.
+        x = torch.tensor(self.data[idx], dtype=torch.long)
+        return x, x
+

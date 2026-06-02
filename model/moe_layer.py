@@ -5,7 +5,7 @@ from model.attention import MultiHeadAttention
 from model.moe_ffn import MoEFFN
 
 class MoETransformerBlock(nn.Module):
-    def __init__(self, d_model: int, n_heads: int, d_ff: int, num_experts: int = 4, k: int = 2, max_seq_len: int = 1024, eps: float = 1e-6):
+    def __init__(self, d_model: int, n_heads: int, d_ff: int, num_experts: int = 4, k: int = 2, max_seq_len: int = 1024, eps: float = 1e-6, dropout: float = 0.0):
         """
         짝수 층(0, 2, 4, 6)에 사용되는 Mixture of Experts (MoE) Transformer 디코더 블록.
         어텐션 층은 Dense FFN 블록과 완전히 공유되지만, FFN 층 자리에 다중 전문가를 호출하는 MoEFFN을 사용합니다.
@@ -18,15 +18,16 @@ class MoETransformerBlock(nn.Module):
             k (int): 활성 전문가 수 (2).
             max_seq_len (int): 최대 컨텍스트 윈도우 크기 (1024).
             eps (float): RMSNorm용 상수.
+            dropout (float): 드롭아웃 확률.
         """
         super().__init__()
         # Pre-RMSNorm Attention
         self.attention_norm = RMSNorm(d_model, eps=eps)
-        self.attention = MultiHeadAttention(d_model, n_heads, max_seq_len=max_seq_len)
+        self.attention = MultiHeadAttention(d_model, n_heads, max_seq_len=max_seq_len, dropout=dropout)
         
         # Pre-RMSNorm MoE FFN
         self.ffn_norm = RMSNorm(d_model, eps=eps)
-        self.ffn = MoEFFN(d_model, d_ff, num_experts=num_experts, k=k)
+        self.ffn = MoEFFN(d_model, d_ff, num_experts=num_experts, k=k, dropout=dropout)
 
     def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor):
         """

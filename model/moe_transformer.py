@@ -5,68 +5,64 @@ from model.normalization import RMSNorm
 from model.rope import precompute_freqs_cis
 from model.transformer_block import TransformerBlock
 from model.moe_layer import MoETransformerBlock
+from model.config import MoETransformerConfig
 
 class MoETransformer(nn.Module):
-    def __init__(self, 
-                 vocab_size: int = 32000, 
-                 d_model: int = 768, 
-                 n_layers: int = 8, 
-                 n_heads: int = 8, 
-                 d_ff: int = 2048, 
-                 num_experts: int = 4, 
-                 k: int = 2, 
-                 max_seq_len: int = 1024, 
-                 eps: float = 1e-6):
+    def __init__(self, config: MoETransformerConfig = None, **kwargs):
         """
         교차 배치 구조의 Decoder-only Mixture of Experts (MoE) Transformer 전체 모델 클래스.
         
         Args:
-            vocab_size (int): 단어 사전 크기 (32000).
-            d_model (int): 임베딩 및 모델 내부 은닉 차원 (768).
-            n_layers (int): 전체 레이어 개수 (8층).
-            n_heads (int): 어텐션 헤드 개수 (8개).
-            d_ff (int): FFN 은닉 중간 차원 크기 (2048).
-            num_experts (int): 전문가 총개수 (4개).
-            k (int): 활성 전문가 수 (2개).
-            max_seq_len (int): 최대 컨텍스트 윈도우 크기 (1024).
-            eps (float): 노멀라이제이션 상수.
+            config (MoETransformerConfig, optional): 모델의 아키텍처 설정을 담은 객체.
+            **kwargs: config가 없을 때 개별적으로 전달할 수 있는 하이퍼파라미터 인자 (하위 호환성용).
         """
         super().__init__()
-        self.vocab_size = vocab_size
-        self.d_model = d_model
-        self.n_layers = n_layers
-        self.n_heads = n_heads
-        self.d_ff = d_ff
-        self.max_seq_len = max_seq_len
+        if config is None:
+            config = MoETransformerConfig(**kwargs)
+        elif kwargs:
+            for k, v in kwargs.items():
+                if hasattr(config, k):
+                    setattr(config, k, v)
+        
+        self.config = config
+        self.vocab_size = config.vocab_size
+        self.d_model = config.d_model
+        self.n_layers = config.n_layers
+        self.n_heads = config.n_heads
+        self.d_ff = config.d_ff
+        self.max_seq_len = config.max_seq_len
+        eps = config.eps
         
         # [구조 1] 단어 토큰 임베딩 선형 행렬 (가중치 미공유 untied 구조)
-        self.token_embeddings = nn.Embedding(vocab_size, d_model)
+        self.token_embeddings = nn.Embedding(self.vocab_size, self.d_model)
         
         # [구조 2] 교차 배치 블록 리스트 생성
         # 짝수 레이어(0, 2, 4, 6) = MoETransformerBlock (전문가 4개 활성화)
         # 홀수 레이어(1, 3, 5, 7) = TransformerBlock (Dense 밀집 레이어)
         self.layers = nn.ModuleList()
-        for i in range(n_layers):
+        for i in range(self.n_layers):
             if i % 2 == 0:
                 self.layers.append(MoETransformerBlock(
-                    d_model=d_model, n_heads=n_heads, d_ff=d_ff,
-                    num_experts=num_experts, k=k, max_seq_len=max_seq_len, eps=eps
+                    d_model=self.d_model, n_heads=self.n_heads, d_ff=self.d_ff,
+                    num_experts=config.num_experts, k=config.k, max_seq_len=self.max_seq_len, eps=eps,
+                    dropout=config.dropout
                 ))
             else:
                 self.layers.append(TransformerBlock(
-                    d_model=d_model, n_heads=n_heads, d_ff=d_ff,
-                    max_seq_len=max_seq_len, eps=eps
+                    d_model=self.d_model, n_heads=self.n_heads, d_ff=self.d_ff,
+                    max_seq_len=self.max_seq_len, eps=eps,
+                    dropout=config.dropout
                 ))
                 
         # [구조 3] 최종 RMSNorm 레이어
         # Pre-RMSNorm 구조이므로 최종 분류(Linear) 단계 진입 직전에 정규화 처리가 수반되어야 합니다.
-        self.norm = RMSNorm(d_model, eps=eps)
+        self.norm = RMSNorm(self.d_model, eps=eps)
         
         # [구조 4] 최종 어휘 사전 매핑 분류기 (LM Head, Untied 구조)
-        self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
+        self.lm_head = nn.Linear(self.d_model, self.vocab_size, bias=False)
         
         # [구조 5] RoPE 회전 주파수 극좌표 복소 버퍼 생성 및 등록
-        freqs_cis = precompute_freqs_cis(d_model // n_heads, max_seq_len)
+        freqs_cis = precompute_freqs_cis(self.d_model // self.n_heads, self.max_seq_len)
         self.register_buffer("freqs_cis", freqs_cis, persistent=False)
 
     def forward(self, input_ids: torch.Tensor, labels: torch.Tensor = None):

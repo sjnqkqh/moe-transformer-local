@@ -5,7 +5,7 @@ from model.attention import MultiHeadAttention
 from model.ffn import DenseFFN
 
 class TransformerBlock(nn.Module):
-    def __init__(self, d_model: int, n_heads: int, d_ff: int, max_seq_len: int = 1024, eps: float = 1e-6):
+    def __init__(self, d_model: int, n_heads: int, d_ff: int, max_seq_len: int = 1024, eps: float = 1e-6, dropout: float = 0.0):
         """
         홀수 층에 사용되는 표준 밀집(Dense) Transformer 디코더 블록.
         프리 RMSNorm(Pre-RMSNorm) 레이아웃을 사용해 레이어가 매우 깊어져도 그래디언트가 우수하게 전파됩니다.
@@ -15,16 +15,17 @@ class TransformerBlock(nn.Module):
             n_heads (int): 멀티헤드 어텐션 헤드 개수 (8).
             d_ff (int): SwiGLU FFN 중간 숨은 차원 (2048).
             max_seq_len (int): 최대 컨텍스트 윈도우 크기 (1024).
-            eps (float): RMSNorm 수치 안정성을 위한 작은 상수.
+            eps (float): RMSNorm용 상수.
+            dropout (float): 드롭아웃 확률.
         """
         super().__init__()
         # 1. 셀프 어텐션 수행 전 입력 정규화를 수행할 RMSNorm
         self.attention_norm = RMSNorm(d_model, eps=eps)
-        self.attention = MultiHeadAttention(d_model, n_heads, max_seq_len=max_seq_len)
+        self.attention = MultiHeadAttention(d_model, n_heads, max_seq_len=max_seq_len, dropout=dropout)
         
         # 2. 피드포워드(FFN) 수행 전 입력 정규화를 수행할 RMSNorm
         self.ffn_norm = RMSNorm(d_model, eps=eps)
-        self.ffn = DenseFFN(d_model, d_ff)
+        self.ffn = DenseFFN(d_model, d_ff, dropout=dropout)
 
     def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
         """

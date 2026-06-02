@@ -4,19 +4,19 @@ from model.ffn import SwiGLU
 from model.moe_router import MoERouter, load_balancing_loss, router_z_loss
 
 class ExpertFFN(nn.Module):
-    def __init__(self, d_model: int, d_ff: int):
+    def __init__(self, d_model: int, d_ff: int, dropout: float = 0.0):
         """
         개별 전문가(Expert) 블록. 
         구조적으로는 Dense 층의 FFN과 동일한 SwiGLU 블록입니다.
         """
         super().__init__()
-        self.ffn = SwiGLU(d_model, d_ff)
+        self.ffn = SwiGLU(d_model, d_ff, dropout=dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.ffn(x)
 
 class MoEFFN(nn.Module):
-    def __init__(self, d_model: int, d_ff: int, num_experts: int = 4, k: int = 2):
+    def __init__(self, d_model: int, d_ff: int, num_experts: int = 4, k: int = 2, dropout: float = 0.0):
         """
         Mixture of Experts FFN 레이어.
         
@@ -25,14 +25,16 @@ class MoEFFN(nn.Module):
             d_ff (int): SwiGLU 중간 히든 레이어 차원 크기 (2048).
             num_experts (int): 전문가 FFN의 총 개수 (4).
             k (int): 한 개의 토큰이 보낼 활성 전문가 수 (2).
+            dropout (float): 최종 출력에 적용할 드롭아웃 확률.
         """
         super().__init__()
         # 내부 라우터 객체 생성
         self.router = MoERouter(d_model, num_experts, k=k)
-        # 4개의 전문가 FFN 객체 리스트 생성
-        self.experts = nn.ModuleList([ExpertFFN(d_model, d_ff) for _ in range(num_experts)])
+        # 4개의 전문가 FFN 객체 리스트 생성 (개별 전문가 내부 드롭아웃은 0.0으로 고정하여 최종 병합 출력이 드롭아웃되도록 함)
+        self.experts = nn.ModuleList([ExpertFFN(d_model, d_ff, dropout=0.0) for _ in range(num_experts)])
         self.num_experts = num_experts
         self.k = k
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x: torch.Tensor):
         """
@@ -69,7 +71,7 @@ class MoEFFN(nn.Module):
             # mask 형태: (S, k)
             mask = (top_k_indices == i)
             
-            # mask가 True인 곳의 행(S차원 인덱스)과 열(k차원 인덱스, 0 또는 1) 위치를 추출합니다.
+            # mask가 True인 곳의 행(S차원 인덱스)하고 열(k차원 인덱스, 0 또는 1) 위치를 추출합니다.
             # token_indices: 해당 전문가를 고른 원래 토큰의 배치 위치 (예: [0, 5, 23, ...])
             # k_indices: 해당 토큰에서 몇 번째로(1등 혹은 2등) 그 전문가를 골랐는지 정보 (예: [0, 1, 0, ...])
             token_indices, k_indices = torch.where(mask)
@@ -95,7 +97,7 @@ class MoEFFN(nn.Module):
             # 이 함수는 중복되지 않거나 중복되더라도 안전하게 값을 누적 더해줍니다.
             out.index_add_(0, token_indices, scaled_out)
             
-        # [과정 6] 평탄화된 토큰 텐서를 원래 배치 형태로 복구시킵니다.
+        # [과정 6] 평탄화된 토큰 텐서를 원래 배치 형태로 복구시키고 최종 드롭아웃을 적용합니다.
         # (S, d_model) -> (B, T, d_model)
         out = out.view(B, T, C)
-        return out, aux_loss, z_loss
+        return self.dropout(out), aux_loss, z_loss

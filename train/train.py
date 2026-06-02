@@ -13,36 +13,24 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from model.moe_transformer import MoETransformer
 from model.moe_layer import MoETransformerBlock
+from model.config import MoETransformerConfig
 from train.utils import (
     save_checkpoint,
     load_latest_checkpoint,
     log_metrics,
     log_event,
     init_experiment,
-    complete_experiment
+    complete_experiment,
+    NumpyDataset
 )
-
-class NumpyDataset(Dataset):
-    def __init__(self, npy_path: str):
-        # 대용량 바이너리 파일을 통째로 메모리에 로드하지 않고 mmap_mode="r" (메모리 맵) 모드로 접근합니다.
-        # 필요할 때 필요한 만큼만 하드디스크에서 읽어오므로 메모리 낭비를 줄입니다.
-        self.data = np.load(npy_path, mmap_mode="r")
-        
-    def __len__(self):
-        return len(self.data)
-        
-    def __getitem__(self, idx):
-        # 입력(input_ids)과 타겟 레이블(labels)을 같은 토큰 시퀀스로 만듭니다.
-        # 디코더 전용 트랜스포머 모델의 forward 함수 내부에서 자동으로 한 칸씩 밀어서(Shift) Loss를 계산해 줍니다.
-        x = torch.tensor(self.data[idx], dtype=torch.long)
-        return x, x
 
 class RoutingProfiler:
     """
     학습 과정 중에 전문가들의 사용 빈도를 모니터링하기 위한 라우터 프로파일러 훅(Hook) 객체.
     """
-    def __init__(self):
+    def __init__(self, num_experts: int = 4):
         self.selections = []
+        self.num_experts = num_experts
         
     def hook_fn(self, module, input, output):
         # MoERouter.forward가 반환하는 세 가지 출력 중 1번째 값인 top_k_indices를 detach하여 캡처합니다.
@@ -56,23 +44,21 @@ class RoutingProfiler:
     def get_metrics(self):
         # 캡처된 기록이 없다면 기본 균등 수치 반환
         if not self.selections:
-            return [0.25, 0.25, 0.25, 0.25], 0.0
+            return [1.0 / self.num_experts] * self.num_experts, 0.0
             
         # 모든 배치/토큰의 전문가 선택 내역을 세로로 병합: (Total_Tokens, k)
         all_indices = torch.cat(self.selections, dim=0)
         total_tokens = all_indices.numel()
         
-        # 각 전문가(0번 ~ 3번)가 선택된 횟수를 카운팅합니다.
-        counts = torch.zeros(4)
-        for idx in all_indices.view(-1):
-            if idx.item() < 4:
-                counts[idx.item()] += 1
+        # 각 전문가가 선택된 횟수를 bincount로 신속히 카운팅합니다 (벡터 연산).
+        counts = torch.bincount(all_indices.view(-1), minlength=self.num_experts).float()
+        counts = counts[:self.num_experts]
                 
         # 비율(%)로 변환
         usage = (counts / total_tokens).tolist()
         
         # 각 전문가 선택 빈도 분포의 Shannon Entropy를 구합니다.
-        # 엔트로피가 최대값(약 1.386)에 가까울수록 전문가가 치우침 없이 완벽하게 균등 배분되고 있음을 뜻합니다.
+        # 엔트로피가 최대값에 가까울수록 전문가가 치우침 없이 완벽하게 균등 배분되고 있음을 뜻합니다.
         probs = counts / (counts.sum() + 1e-10)
         entropy = -torch.sum(probs * torch.log(probs + 1e-10)).item()
         
@@ -93,7 +79,7 @@ def train(args):
     
     # 1. 모델 객체 생성
     print("Instantiating MoE Transformer...")
-    model = MoETransformer(
+    config = MoETransformerConfig(
         vocab_size=32000,
         d_model=768,
         n_layers=8,
@@ -101,8 +87,10 @@ def train(args):
         d_ff=2048,
         num_experts=4,
         k=2,
-        max_seq_len=args.block_size
+        max_seq_len=args.block_size,
+        dropout=args.dropout
     )
+    model = MoETransformer(config)
     
     # 파라미터 상세 구성 정보 출력 (사용자 학습 안내 목적)
     if accelerator.is_main_process:
@@ -161,7 +149,7 @@ def train(args):
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     
     # 4. 전문가 라우팅 모니터링을 위한 Forward 훅(Profiler) 연결
-    profiler = RoutingProfiler()
+    profiler = RoutingProfiler(num_experts=model.config.num_experts)
     hooks = []
     for layer in model.layers:
         if isinstance(layer, MoETransformerBlock):
@@ -338,6 +326,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_every", type=int, default=1000)
     parser.add_argument("--log_every", type=int, default=100)
     parser.add_argument("--warmup_steps", type=int, default=500)
+    parser.add_argument("--dropout", type=float, default=0.1, help="드롭아웃 비율")
     parser.add_argument("--smoke_test", action="store_true")
     args = parser.parse_args()
     
