@@ -30,6 +30,13 @@
 │   ├── moe_router.py       # Top-2 Router (보조 손실 계산 포함)
 │   ├── rope.py             # Rotary Position Embeddings 주파수 연산 및 적용
 │   └── normalization.py    # RMSNorm 레이어
+├── docs/                   # 프로젝트 문서 및 설계 사양서 모음
+│   ├── DEPENDENCY.md       # 의존성 및 패키지 개발 환경 명세
+│   ├── moe_transformer_blueprint.md # 모델 아키텍처 설계 사양서
+│   ├── moe_transformer_todo.md      # 모델 구현 및 학습 진행 상황판
+│   ├── run process.md      # 학습 데이터 전처리 및 구동 가이드
+│   ├── 프로젝트_개선_검토_리포트.md # 코드 문제점 분석 및 개선 리포트
+│   └── moe_training_results.md     # FineWeb-edu 학습 이력 및 결과 보고서
 ├── tokenizer/              # BPE 토크나이저 학습 스크립트
 ├── train/                  # 학습, 평가 및 디버깅 파이프라인
 │   ├── train.py            # Accelerate 기반 학습 스크립트
