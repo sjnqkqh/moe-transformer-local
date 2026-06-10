@@ -11,9 +11,8 @@ from accelerate import Accelerator
 # 프로젝트 루트 경로를 참조하여 모델 모듈을 임포트하기 위해 sys.path에 추가합니다.
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from model.moe_transformer import MoETransformer
-from model.moe_layer import MoETransformerBlock
-from model.config import MoETransformerConfig
+from model.dense_transformer import DenseTransformer
+from model.config import DenseTransformerConfig
 from train.utils import (
     save_checkpoint,
     load_latest_checkpoint,
@@ -24,45 +23,7 @@ from train.utils import (
     NumpyDataset
 )
 
-class RoutingProfiler:
-    """
-    학습 과정 중에 전문가들의 사용 빈도를 모니터링하기 위한 라우터 프로파일러 훅(Hook) 객체.
-    """
-    def __init__(self, num_experts: int = 4):
-        self.selections = []
-        self.num_experts = num_experts
-        
-    def hook_fn(self, module, input, output):
-        # MoERouter.forward가 반환하는 세 가지 출력 중 1번째 값인 top_k_indices를 detach하여 캡처합니다.
-        # output[1] shape: (S, k) - 각 토큰이 선택한 전문가 인덱스 정보
-        self.selections.append(output[1].detach().cpu())
-        
-    def clear(self):
-        # 로그를 한번 남긴 후에는 카운팅을 비워줍니다.
-        self.selections = []
-        
-    def get_metrics(self):
-        # 캡처된 기록이 없다면 기본 균등 수치 반환
-        if not self.selections:
-            return [1.0 / self.num_experts] * self.num_experts, 0.0
-            
-        # 모든 배치/토큰의 전문가 선택 내역을 세로로 병합: (Total_Tokens, k)
-        all_indices = torch.cat(self.selections, dim=0)
-        total_tokens = all_indices.numel()
-        
-        # 각 전문가가 선택된 횟수를 bincount로 신속히 카운팅합니다 (벡터 연산).
-        counts = torch.bincount(all_indices.view(-1), minlength=self.num_experts).float()
-        counts = counts[:self.num_experts]
-                
-        # 비율(%)로 변환
-        usage = (counts / total_tokens).tolist()
-        
-        # 각 전문가 선택 빈도 분포의 Shannon Entropy를 구합니다.
-        # 엔트로피가 최대값에 가까울수록 전문가가 치우침 없이 완벽하게 균등 배분되고 있음을 뜻합니다.
-        probs = counts / (counts.sum() + 1e-10)
-        entropy = -torch.sum(probs * torch.log(probs + 1e-10)).item()
-        
-        return usage, entropy
+# RoutingProfiler removed for Dense Transformer
 
 def train(args):
     # Accelerate 초기화: mixed_precision="bf16"은 A100 GPU에서 학습 속도를 몇 배 향상시키고 메모리를 아낍니다.
@@ -78,47 +39,32 @@ def train(args):
     log_dir = os.path.join(args.project_dir, "logs")
     
     # 1. 모델 객체 생성
-    print("Instantiating MoE Transformer...")
-    config = MoETransformerConfig(
+    print("Instantiating Dense Transformer...")
+    config = DenseTransformerConfig(
         vocab_size=32000,
         d_model=768,
-        n_layers=8,
+        n_layers=12,
         n_heads=8,
-        d_ff=2048,
-        num_experts=4,
-        k=2,
+        d_ff=3072,
         max_seq_len=args.block_size,
         dropout=args.dropout
     )
-    model = MoETransformer(config)
+    model = DenseTransformer(config)
     
     # 파라미터 상세 구성 정보 출력 (사용자 학습 안내 목적)
     if accelerator.is_main_process:
         total_params = sum(p.numel() for p in model.parameters())
         emb_params = model.token_embeddings.weight.numel()
         attn_params = sum(p.numel() for name, p in model.named_parameters() if "attention" in name)
-        
-        dense_ffn_params = 0
-        moe_ffn_params = 0
-        for name, p in model.named_parameters():
-            if "ffn" in name and "attention" not in name:
-                parts = name.split(".")
-                if len(parts) > 1 and parts[0] == "layers" and parts[1].isdigit():
-                    layer_idx = int(parts[1])
-                    if layer_idx % 2 == 0:
-                        moe_ffn_params += p.numel()
-                    else:
-                        dense_ffn_params += p.numel()
-                        
+        ffn_params = sum(p.numel() for name, p in model.named_parameters() if "ffn" in name and "attention" not in name)
         lm_head_params = model.lm_head.weight.numel()
         
         print("-" * 50)
         print("Model Architecture Parameter Breakdown:")
         print(f"  - Total Parameters:      {total_params:,} ({total_params/1e6:.2f}M)")
         print(f"  - Token Embedding:       {emb_params:,} ({emb_params/1e6:.2f}M)")
-        print(f"  - Attention (8 layers):  {attn_params:,} ({attn_params/1e6:.2f}M)")
-        print(f"  - Dense FFN (4 layers):  {dense_ffn_params:,} ({dense_ffn_params/1e6:.2f}M)")
-        print(f"  - MoE FFN (4 layers):    {moe_ffn_params:,} ({moe_ffn_params/1e6:.2f}M)")
+        print(f"  - Attention (12 layers): {attn_params:,} ({attn_params/1e6:.2f}M)")
+        print(f"  - FFN (12 layers):       {ffn_params:,} ({ffn_params/1e6:.2f}M)")
         print(f"  - LM Head (untied):      {lm_head_params:,} ({lm_head_params/1e6:.2f}M)")
         print("-" * 50)
         
@@ -148,22 +94,14 @@ def train(args):
         
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     
-    # 4. 전문가 라우팅 모니터링을 위한 Forward 훅(Profiler) 연결
-    profiler = RoutingProfiler(num_experts=model.config.num_experts)
-    hooks = []
-    for layer in model.layers:
-        if isinstance(layer, MoETransformerBlock):
-            # MoEFFN 모듈 내부의 MoERouter에 훅을 달아 토큰 분배값을 낚아챕니다.
-            hooks.append(layer.ffn.router.register_forward_hook(profiler.hook_fn))
-            
-    # 5. Accelerate를 이용한 다중 장치(DDP/GPU/CPU) 및 연산 포장 준비
+    # 4. Accelerate를 이용한 다중 장치(DDP/GPU/CPU) 및 연산 포장 준비
     # DDP 및 믹스드 프리시전 분산 처리에 맞게 모델, 데이터로더 등을 재배치합니다.
     model, optimizer, dataloader, scheduler = accelerator.prepare(
         model, optimizer, dataloader, scheduler
     )
     
-    # 6. 중간 중단 시점의 최근 체크포인트 자동 복원 검사
-    pattern = f"moe_{args.run_id}"
+    # 5. 중간 중단 시점의 최근 체크포인트 자동 복원 검사
+    pattern = f"dense_{args.run_id}"
     start_step = load_latest_checkpoint(ckpt_dir, model, optimizer, scheduler, pattern)
     
     # 실험 정보 최초 등록 (중복 방지를 위해 step이 0이고 메인 머신인 경우에만 1회 기록)
@@ -193,7 +131,7 @@ def train(args):
             optimizer.zero_grad()
             
             # [역전파 1] 순전파 (Forward Pass)
-            logits, loss, main_loss, aux_loss, z_loss = model(input_ids, labels)
+            logits, loss, main_loss = model(input_ids, labels)
             
             # [역전파 2] 역전파 (Backward Pass)
             # DDP 분산 처리 및 BF16 스케일링을 자동으로 조율하며 그래디언트를 산출합니다.
@@ -234,10 +172,6 @@ def train(args):
                 # 분산 프로세스들 동기화 대기
                 accelerator.wait_for_everyone()
                 
-                # 라우터 사용 비중 분석 후 훅 캐시 삭제
-                expert_usage, router_entropy = profiler.get_metrics()
-                profiler.clear()
-                
                 # 학습 처리 속도(tokens/second) 계산
                 elapsed = time.time() - step_time
                 tokens_per_sec = total_tokens_processed / max(1e-5, elapsed)
@@ -253,21 +187,15 @@ def train(args):
                 if accelerator.is_main_process:
                     lr = scheduler.get_last_lr()[0]
                     main_l_val = main_loss.item()
-                    aux_l_val = aux_loss.item()
-                    z_l_val = z_loss.item()
                     total_l_val = loss.item()
                     ppl = np.exp(min(20, main_l_val)) # 오버플로우 방지 캡 적용
                     
                     metrics = {
                         "main_loss": main_l_val,
-                        "aux_loss": aux_l_val,
-                        "z_loss": z_l_val,
                         "total_loss": total_l_val,
                         "ppl": ppl,
                         "lr": lr,
                         "grad_norm": grad_norm,
-                        "expert_usage": expert_usage,
-                        "router_entropy": router_entropy,
                         "gpu_memory_gb": gpu_memory_gb,
                         "tokens_per_sec": tokens_per_sec,
                         "epoch_progress": step / max_steps
@@ -276,16 +204,6 @@ def train(args):
                     # metrics.jsonl 파일에 한 줄의 JSON 텍스트 추가
                     log_metrics(log_dir, args.run_id, step, metrics)
                     print(f"Step {step}/{max_steps} | Loss: {total_l_val:.4f} | PPL: {ppl:.2f} | lr: {lr:.2e} | Speed: {tokens_per_sec:.0f} tok/s")
-                    
-                    # 전문가 붕괴 점검: 가용 비중이 5% 미만인 전문가 발생 시 비상 경고 로그 기록
-                    for exp_idx, usage_ratio in enumerate(expert_usage):
-                        if usage_ratio < 0.05:
-                            log_event(log_dir, args.run_id, "expert_collapse", {
-                                "step": step,
-                                "expert_id": exp_idx,
-                                "usage_ratio": usage_ratio,
-                                "all_usages": expert_usage
-                            })
                             
             # 모델 체크포인트 보관 (중간 저장 및 학습 완료 최종 저장)
             save_interval = 2 if args.smoke_test else args.save_every
@@ -298,9 +216,7 @@ def train(args):
                         "loss": loss.item()
                     })
                     
-    # 훅 제거를 통해 메모리 누수를 완전히 예방합니다.
-    for h in hooks:
-        h.remove()
+    # 훈련 완료 처리
         
     # 실험 종결 등록
     if accelerator.is_main_process:
@@ -315,7 +231,7 @@ def train(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_id", type=str, required=True, help="Unique run ID, e.g. r001")
-    parser.add_argument("--name", type=str, default="moe_baseline", help="Description name")
+    parser.add_argument("--name", type=str, default="dense_baseline", help="Description name")
     parser.add_argument("--data_dir", type=str, default="train/data")
     parser.add_argument("--tokenizer_dir", type=str, default="tokenizer/output")
     parser.add_argument("--project_dir", type=str, default="drive_mock")

@@ -19,7 +19,7 @@ def prepare_data(tokenizer_dir: str, output_dir: str, num_docs: int = 100000, bl
     os.makedirs(output_dir, exist_ok=True)
     
     print("=" * 60)
-    print("📦 MoE Transformer — Dataset Preparation")
+    print("📦 Dense Transformer — Dataset Preparation")
     print("=" * 60)
     
     # -------------------------------------------------------------------------
@@ -37,14 +37,14 @@ def prepare_data(tokenizer_dir: str, output_dir: str, num_docs: int = 100000, bl
         # 로컬 테스트용 10개 더미 지문 리스트 생성 (20배 복제해 200문항 생성)
         dummy_texts = [
             "This is a sample document for smoke testing the data preparation script.",
-            "Mixture of experts (MoE) uses a router to forward inputs to selected experts.",
-            "Each token in the sequence gets assigned to top-K experts based on routing probability.",
-            "Our model has 120M parameters and is trained on FineWeb-edu dataset using PyTorch.",
+            "Dense transformer uses self-attention and feed-forward networks in every layer.",
+            "Each token in the sequence attends to all previous tokens based on causal attention.",
+            "Our model has 162M parameters and is trained on FineWeb-edu dataset using PyTorch.",
             "We run training on Colab A100 GPU and use BF16 mixed precision for efficiency.",
             "For local debugging, we run in CPU/MPS mode with float32 precision.",
             "The tokenizer is trained with Byte Pair Encoding (BPE) algorithm.",
-            "We have 8 layers of decoder-only transformer with interleaved MoE and Dense layers.",
-            "Load balancing loss and router z-loss are added to the main training loss.",
+            "We have 12 layers of decoder-only dense transformer with standard attention and FFN.",
+            "Standard cross-entropy loss is used as the sole training objective for language modeling.",
             "Save checkpoints to Google Drive to handle preemptive runtime terminations."
         ] * 20
         from datasets import Dataset

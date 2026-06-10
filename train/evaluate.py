@@ -10,32 +10,29 @@ from torch.utils.data import Dataset, DataLoader
 # 프로젝트 루트 경로를 파이썬 모듈 검색 경로에 등록합니다.
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from model.moe_transformer import MoETransformer
-from model.moe_layer import MoETransformerBlock
-from model.config import MoETransformerConfig
+from model.dense_transformer import DenseTransformer
+from model.config import DenseTransformerConfig
 from train.utils import NumpyDataset
 
 def evaluate(args):
     print("=" * 60)
-    print("📊 MoE Transformer — Model Evaluation")
+    print("📊 Dense Transformer — Model Evaluation")
     print("=" * 60)
     
     # -------------------------------------------------------------------------
     # [1단계] 검증용 모델 인스턴스 객체 생성
     # -------------------------------------------------------------------------
     print("Instantiating model...")
-    config = MoETransformerConfig(
+    config = DenseTransformerConfig(
         vocab_size=32000,
         d_model=768,
-        n_layers=8,
+        n_layers=12,
         n_heads=8,
-        d_ff=2048,
-        num_experts=4,
-        k=2,
+        d_ff=3072,
         max_seq_len=args.block_size,
         dropout=0.0  # 평가 시에는 드롭아웃 비활성화
     )
-    model = MoETransformer(config)
+    model = DenseTransformer(config)
     
     # -------------------------------------------------------------------------
     # [2단계] 디스크로부터 최근 가중치 체크포인트(.pt) 자동 스캔 및 로드
@@ -83,20 +80,7 @@ def evaluate(args):
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     
     # -------------------------------------------------------------------------
-    # [4단계] 라우팅 상태 수집용 포워드 훅(Hook)을 MoE router에 등록
-    # -------------------------------------------------------------------------
-    selected_indices = []
-    def hook_fn(module, input, output):
-        # output[1] = top_k_indices (S, k)
-        selected_indices.append(output[1].detach().cpu())
-        
-    hooks = []
-    for layer in model.layers:
-        if isinstance(layer, MoETransformerBlock):
-            hooks.append(layer.ffn.router.register_forward_hook(hook_fn))
-            
-    # -------------------------------------------------------------------------
-    # [5단계] 정방향 검증 손실(Loss) 연산 루프
+    # [4단계] 정방향 검증 손실(Loss) 연산 루프
     # -------------------------------------------------------------------------
     total_loss = 0.0
     total_tokens = 0
@@ -110,7 +94,7 @@ def evaluate(args):
             input_ids, labels = input_ids.to(device), labels.to(device)
             
             # 순전파
-            logits, loss, main_loss, aux_loss, z_loss = model(input_ids, labels)
+            logits, loss, main_loss = model(input_ids, labels)
             
             # shift_logits의 특성상 마지막 1개 토큰 예측은 타겟이 없으므로, (T - 1) 개의 토큰에 크로스엔트로피 손실을 누적합니다.
             num_tokens = input_ids.shape[0] * (input_ids.shape[1] - 1)
@@ -121,10 +105,6 @@ def evaluate(args):
             # 스모크 테스트의 경우 5개 배치만 빠른 검증하고 마칩니다.
             if args.smoke_test and total_batches >= 5:
                 break
-                
-    # 훅 제거를 통한 메모리 관리
-    for h in hooks:
-        h.remove()
         
     # -------------------------------------------------------------------------
     # [6단계] Validation Perplexity (PPL) 최종 도출
@@ -137,52 +117,14 @@ def evaluate(args):
     print(f"  Validation PPL:  {val_ppl:.4f}")
     
     # -------------------------------------------------------------------------
-    # [7단계] 전문가 균등 할당(Load Balancing CV) 지표 연산
+    # [7단계] 자동화 평가 결과 JSON 리포트 디스크 영구 저장
     # -------------------------------------------------------------------------
-    # 수집한 전문가 할당 기록 병합
-    all_indices = torch.cat(selected_indices, dim=0)
-    num_experts = model.config.num_experts
-    expert_counts = torch.bincount(all_indices.view(-1), minlength=num_experts).float()
-    expert_counts = expert_counts[:num_experts]
-            
-    total_selections = expert_counts.sum().item()
-    expert_percentages = (expert_counts / total_selections).tolist()
-    
-    # Coefficient of Variation (CV) 계산
-    # CV = 표준편차(선택횟수) / 평균(선택횟수)
-    # 완전히 균등하면 CV = 0.0 이 되며, 특정 전문가만 계속 선택하면 CV가 치솟아 0.3 한도를 초과합니다.
-    counts_np = expert_counts.numpy()
-    mean_count = counts_np.mean()
-    std_count = counts_np.std()
-    cv = (std_count / mean_count).item() if mean_count > 0 else 0.0
-    
-    print("\nMoE Expert Routing Analysis:")
-    for i, pct in enumerate(expert_percentages):
-        print(f"  Expert {i}: {pct * 100:.2f}% (count: {int(counts_np[i])})")
-    print(f"  Load Balancing CV: {cv:.4f}")
-    
-    # 특정 전문가의 가용 빈도가 5%에 미치지 못하는 붕괴(Collapse) 사례를 판정합니다.
-    collapsed_experts = []
-    for i, pct in enumerate(expert_percentages):
-        if pct < 0.05:
-            collapsed_experts.append(i)
-            print(f"  ⚠️ Expert {i} collapsed! (Usage: {pct * 100:.2f}%)")
-            
-    if not collapsed_experts:
-        print("  ✅ All experts active. No expert collapse detected.")
-        
-    # -------------------------------------------------------------------------
-    # [8단계] 자동화 평가 결과 JSON 리포트 디스크 영구 저장
-    # -------------------------------------------------------------------------
-    # PPL 50 미만, CV 0.3 미만, 그리고专家 낙오가 없어야 PASS로 판정합니다 (모에 평가 명세서 기준).
+    # PPL 50 미만이어야 PASS로 판정합니다.
     report = {
         "step": step,
         "validation_cross_entropy": mean_loss,
         "validation_perplexity": val_ppl,
-        "load_balancing_cv": cv,
-        "expert_usages": expert_percentages,
-        "collapsed_experts": collapsed_experts,
-        "status": "pass" if (val_ppl < 50.0 and cv < 0.3 and len(collapsed_experts) == 0) else "fail"
+        "status": "pass" if (val_ppl < 50.0) else "fail"
     }
     
     if args.smoke_test:
@@ -197,7 +139,7 @@ def evaluate(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt_dir", type=str, default="drive_mock/checkpoints")
-    parser.add_argument("--checkpoint_pattern", type=str, default="moe_")
+    parser.add_argument("--checkpoint_pattern", type=str, default="dense_")
     parser.add_argument("--data_dir", type=str, default="train/data")
     parser.add_argument("--block_size", type=int, default=1024)
     parser.add_argument("--batch_size", type=int, default=32)

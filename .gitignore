@@ -71,3 +71,6 @@ Thumbs.db
 *.sln
 *.swp
 *.swo
+
+# --- OMC ---
+.omc/
