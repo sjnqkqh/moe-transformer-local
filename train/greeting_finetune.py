@@ -12,6 +12,93 @@ TKNZ = os.path.join(PRJ, "tokenizer")
 
 # Greeting data: 10 pairs x 20 variations = 200 pairs
 greetings = [
+    # === 기본 인사 (20 variations) ===
+    ("안녕", "안녕하세요! 편하게 물어봐 주세요."),
+    ("안녕", "안녕하세요, 반갑습니다!"),
+    ("안녕", "안녕! 오늘 기분은 어때요?"),
+    ("안녕", "네 안녕하세요~ 무엇을 도와드릴까요?"),
+    ("안녕", "안녕하세요! 새로운 대화를 시작해볼까요?"),
+    ("안녕", "안녕! 무슨 일이야?"),
+    ("안녕", "안녕하세요! 궁금한 점이 있으신가요?"),
+    ("안녕", "안녕하세요. 무엇이든 물어보세요!"),
+    ("안녕", "안녕! 반가워요."),
+    ("안녕", "안녕하세요. 오늘은 어떤 얘기를 나눠볼까요?"),
+    ("안녕하세요", "네, 안녕하세요! 무엇을 도와드릴까요?"),
+    ("안녕하세요", "안녕하세요! 만나서 반갑습니다."),
+    ("안녕하세요", "안녕하세요. 편하게 물어봐 주세요."),
+    ("안녕하세요", "네~ 안녕하세요! 기다리고 있었어요."),
+    ("안녕하세요", "안녕하세요! 편히 얘기해요."),
+    ("안녕하세요", "안녕하세요. 반갑습니다! 무엇을 도와드릴까요?"),
+    ("안녕", "안녕! 나는 너의 챗봇 친구야."),
+    ("안녕", "안녕하세요! 제 이름은 없지만 당신이 지어주세요."),
+    ("안녕", "안녕! 무슨 얘기하고 싶어?"),
+    ("안녕", "안녕하세요. 말씀하세요!"),
+    # === 반가움/첫인사 (15 variations) ===
+    ("반가워", "저도 반갑습니다! 어떤 이야기를 나눠볼까요?"),
+    ("반가워", "나도 반가워! 친하게 지내자!"),
+    ("반가워", "반가워요! 좋은 대화 나눠봐요."),
+    ("처음 뵙겠습니다", "처음 뵙겠습니다! 만나서 반가워요."),
+    ("처음 뵙겠습니다", "처음 뵙겠습니다. 잘 부탁드립니다."),
+    ("만나서 반가워요", "저도 만나서 반가워요! 좋은 하루 되세요."),
+    ("만나서 반가워요", "저도 반가워요! 자주 놀러 오세요."),
+    ("방가방가", "방가방가~! 오늘 뭐하고 지냈어요?"),
+    ("방가방가", "방가! 새로운 친구를 만나서 기뻐요."),
+    ("하이", "하이! 오늘 기분은 어떠신가요?"),
+    ("하이", "하이~! 반가워요!"),
+    ("헬로", "헬로~! 반가워요. 기분이 좋아요!"),
+    ("헬로", "헬로! 안녕! 외국어도 환영이에요."),
+    ("새로 왔어요", "어서 오세요! 궁금한 점이 있으시면 물어봐 주세요."),
+    ("새로 왔어요", "환영합니다! 함께 이야기 나눠요."),
+    # === 안부/대화시작 (15 variations) ===
+    ("안녕, 잘 지내?", "네, 잘 지내고 있어요! 당신은 어떠세요?"),
+    ("안녕, 잘 지내?", "응! 잘 지내. 너는 어때?"),
+    ("안녕, 잘 지내?", "네 덕분에 잘 지내요!"),
+    ("오랜만이야", "오랜만이에요! 어떻게 지내셨어요?"),
+    ("오랜만이야", "진짜 오랜만이다! 보고 싶었어."),
+    ("다시 왔어", "다시 와주셔서 감사합니다!"),
+    ("다시 왔어", "또 만나서 반가워요!"),
+    ("안녕, 심심해", "아이고 심심하시군요. 재미있는 이야기해드릴까요?"),
+    ("안녕, 심심해", "심심하면 나랑 놀자! 무슨 이야기 하고 싶어?"),
+    ("안녕, 날씨 좋다", "그러게요! 날씨가 정말 좋네요. 산책하기 딱이에요."),
+    ("안녕, 날씨 좋다", "응! 날씨 최고야. 기분 좋은 하루 보내!"),
+    ("힘들어", "아이고, 제가 도와드릴 게 있을까요?"),
+    ("힘들어", "힘들 때는 얘기하는 게 좋아. 무슨 일인지 말해볼래?"),
+    ("기분 좋아", "기분 좋은 일이 있으셨군요! 저도 좋아요."),
+    ("기분 좋아", "나도 기분 좋아! 좋은 하루야!"),
+    # === 소개/질문 (10 variations) ===
+    ("넌 누구니?", "저는 AI 챗봇이에요! 질문 환영합니다."),
+    ("넌 누구니?", "나는 한국어를 배운 작은 인공지능이야."),
+    ("소개해줘", "저는 162M 파라미터 한국어 챗봇입니다!"),
+    ("소개해줘", "안녕! 나는 대화를 좋아하는 AI야. 반가워!"),
+    ("너 이름이 뭐야?", "이름은 없어요. 당신이 지어주세요!"),
+    ("무엇을 도와줄 수 있어?", "질문, 대화, 상담 무엇이든 물어보세요!"),
+    ("무엇을 도와줄 수 있어?", "궁금한 거 있으면 뭐든지 물어봐. 내가 아는 한도에서 대답해줄게."),
+    ("누구랑 얘기 중이야?", "저는 당신의 대화 파트너예요."),
+    ("누구랑 얘기 중이야?", "나랑 얘기하고 있는 거야! 궁금한 거 있어?"),
+    ("뭐라고 부를까?", "편하게 불러주세요! 기다리고 있을게요."),
+    # === 감정표현 (10 variations) ===
+    ("좋은 아침", "좋은 아침이에요! 오늘도 힘차게 시작해볼까요?"),
+    ("좋은 아침", "굿모닝! 기분 좋은 아침이야."),
+    ("잘 자", "안녕히 주무세요! 편안한 밤 되세요."),
+    ("잘 자", "잘 자! 내일 또 보자."),
+    ("고마워", "감사합니다! 필요한 게 있으면 언제든 말씀해 주세요."),
+    ("고마워", "고마워! 네 덕분에 기분이 좋아졌어."),
+    ("안녕, 졸려", "피곤하시군요. 잠깐 쉬는 것도 좋아요."),
+    ("안녕, 배고파", "맛있는 거 드시는 게 어떨까요?"),
+    ("안녕, 보고 싶어", "저도 보고 싶었어요! 어떤 얘기 할래요?"),
+    ("안녕, 행복해", "행복한 소식을 들으니 저도 기쁘네요!"),
+    # === 대화유도 (10 variations) ===
+    ("안녕, 뭐 할까?", "같이 대화해요! 어떤 주제가 좋을까요?"),
+    ("안녕, 뭐 할까?", "같이 얘기하자! 요즘 재미있는 거 있어?"),
+    ("안녕, 할 얘기가 있어", "무슨 얘기인지 궁금하네요. 들려주세요!"),
+    ("안녕, 할 얘기가 있어", "응, 무슨 얘기인지 들어볼게!"),
+    ("안녕, 있잖아", "응, 무슨 말인지 말해봐."),
+    ("저기요", "네, 부르셨어요?"),
+    ("안녕, 시간 있어?", "네, 충분히 있습니다! 원하는 만큼 대화해요."),
+    ("안녕, 심심한데?", "내가 재미있는 이야기 하나 해줄까?"),
+    ("안녕, 오늘 뭐 했어?", "여기서 당신이 올 때까지 기다렸어요!"),
+    ("안녕, 이야기하자", "좋아! 무슨 이야기부터 할까?"),
+
     # === 기본 인사 (10) ===
     ("안녕", "안녕하세요! 편하게 물어봐 주세요."),
     ("안녕하세요", "네, 안녕하세요! 무엇을 도와드릴까요?"),
@@ -57,7 +144,7 @@ greetings = [
     ("아무 말 대화 해줘", "음... 오늘은 어떤 하루를 보내고 계신가요?"),
     ("오늘 뭐 했어?", "저는 여기서 당신이 올 때까지 기다렸어요! 당신 하루는 어땠나요?"),
 ]
-greetings = greetings * 5  # 40 unique x 5 = 200 pairs
+greetings = greetings * 10  # 120 unique x 10 = 1,200 pairs  # 40 unique x 5 = 200 pairs
 print(f"Greeting pairs: {len(greetings)}")
 
 # Load tokenizer
@@ -90,7 +177,7 @@ class NumpyDataset(Dataset):
         x = torch.from_numpy(self.data[idx].astype(np.int64))
         return x, x
 
-loader = DataLoader(NumpyDataset(blocks), batch_size=16, shuffle=True, drop_last=True)
+loader = DataLoader(NumpyDataset(blocks), batch_size=8, shuffle=True)
 print(f"Batches/epoch: {len(loader)}")
 
 # Load model architecture
@@ -123,26 +210,32 @@ model, opt, loader = acc.prepare(model,
     torch.optim.AdamW(model.parameters(), lr=5e-5, weight_decay=0.01), loader)
 model.train()
 
-steps = len(loader)
-print(f"Training {steps} steps (1 epoch)...")
+steps_per_epoch = len(loader)
+total_steps = steps_per_epoch * 5
+print(f"Training {total_steps} steps (5 epochs, {steps_per_epoch} per epoch)...")
 
-for step, batch in enumerate(loader):
-    x, y = batch
-    opt.zero_grad()
-    _, loss, _ = model(x, y)
-    acc.backward(loss)
-    acc.clip_grad_norm_(model.parameters(), max_norm=1.0)
-    opt.step()
-    if step % 5 == 0:
-        lv = loss.item()
-        print(f"  Step {step+1}/{steps} | Loss: {lv:.4f} | PPL: {math.exp(min(20, lv)):.2f}")
+for epoch in range(5):
+    epoch_loss = 0.0
+    for step, batch in enumerate(loader):
+        x, y = batch
+        opt.zero_grad()
+        _, loss, _ = model(x, y)
+        acc.backward(loss)
+        acc.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        opt.step()
+        epoch_loss += loss.item()
+        if step % 3 == 0:
+            print(f"  Epoch {epoch+1}/5 step {step+1} | Loss: {loss.item():.4f}")
+    print(f"  → Epoch {epoch+1} avg loss: {epoch_loss / steps_per_epoch:.4f}")
 
 acc.wait_for_everyone()
 if acc.is_main_process:
     uw = acc.unwrap_model(model)
     out = os.path.join(CKPT, "dense_korean_chat_v6_greeting.pt")
-    torch.save({"step": steps, "model_state_dict": uw.state_dict(),
-        "optimizer_state_dict": opt.state_dict(), "loss": loss.item()}, out)
+    final_loss = epoch_loss / steps_per_epoch
+    print(f"Saving... final_loss={final_loss:.4f}")
+    torch.save({"step": total_steps, "model_state_dict": uw.state_dict(),
+        "optimizer_state_dict": opt.state_dict(), "loss": final_loss}, out)
     print(f"Saved: {out}")
-    print(f"Final Loss: {loss.item():.4f}")
+    print(f"Final Loss: {final_loss:.4f}")
     print(f'To test: --checkpoint {out} --prompt "안녕" --chat --temperature 1.0')
