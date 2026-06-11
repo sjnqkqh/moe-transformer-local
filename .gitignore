@@ -29,7 +29,8 @@ wheels/
 .venv/
 venv/
 ENV/
-
+test_project/
+test_project_wandb/
 # --- 데이터셋 및 캐시 (Datasets & Cache) ---
 # 대용량 바이너리 데이터셋 파일 차단
 *.npy
@@ -74,3 +75,4 @@ Thumbs.db
 
 # --- OMC ---
 .omc/
+*.zip
