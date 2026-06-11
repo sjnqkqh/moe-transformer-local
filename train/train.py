@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 from accelerate import Accelerator
+import wandb
 
 # 프로젝트 루트 경로를 참조하여 모델 모듈을 임포트하기 위해 sys.path에 추가합니다.
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -38,10 +39,22 @@ def train(args):
     ckpt_dir = os.path.join(args.project_dir, "checkpoints")
     log_dir = os.path.join(args.project_dir, "logs")
     
+    if args.wandb and accelerator.is_main_process:
+        wandb.init(
+            project="korean-dense-chatbot",
+            name=args.run_id,
+            config=vars(args)
+        )
+        
     # 1. 모델 객체 생성
     print("Instantiating Dense Transformer...")
+    from transformers import PreTrainedTokenizerFast
+    tokenizer = PreTrainedTokenizerFast.from_pretrained(args.tokenizer_dir)
+    vocab_size = len(tokenizer)
+    print(f"Loaded tokenizer from {args.tokenizer_dir}. Dynamically set vocab_size to {vocab_size}")
+    
     config = DenseTransformerConfig(
-        vocab_size=32000,
+        vocab_size=vocab_size,
         d_model=768,
         n_layers=12,
         n_heads=8,
@@ -80,6 +93,12 @@ def train(args):
     # 3. 최적화기(Optimizer) 설정
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     
+    # 만약 --epochs가 지정되었다면 max_steps를 자동 계산합니다.
+    if args.epochs is not None:
+        args.max_steps = len(dataloader) * args.epochs
+        if accelerator.is_main_process:
+            print(f"Calculated max_steps: {args.max_steps} for {args.epochs} epochs (1 epoch = {len(dataloader)} steps)")
+
     # 학습률 스케줄러: 초기에 서서히 올렸다가 코사인 감쇄 곡선으로 학습률을 차츰 낮춥니다.
     max_steps = 10 if args.smoke_test else args.max_steps
     warmup_steps = 2 if args.smoke_test else args.warmup_steps
@@ -204,6 +223,18 @@ def train(args):
                     # metrics.jsonl 파일에 한 줄의 JSON 텍스트 추가
                     log_metrics(log_dir, args.run_id, step, metrics)
                     print(f"Step {step}/{max_steps} | Loss: {total_l_val:.4f} | PPL: {ppl:.2f} | lr: {lr:.2e} | Speed: {tokens_per_sec:.0f} tok/s")
+                    
+                    if args.wandb:
+                        wandb.log({
+                            "train/loss": total_l_val,
+                            "train/main_loss": main_l_val,
+                            "train/ppl": ppl,
+                            "train/lr": lr,
+                            "train/grad_norm": grad_norm,
+                            "system/gpu_memory_gb": gpu_memory_gb,
+                            "system/tokens_per_sec": tokens_per_sec,
+                            "system/epoch_progress": step / max_steps
+                        }, step=step)
                             
             # 모델 체크포인트 보관 (중간 저장 및 학습 완료 최종 저장)
             save_interval = 2 if args.smoke_test else args.save_every
@@ -226,6 +257,8 @@ def train(args):
             "final_loss": loss.item() if 'loss' in locals() else -1.0
         }
         complete_experiment(log_dir, args.run_id, final_metrics)
+        if args.wandb:
+            wandb.finish()
         print("=" * 60)
 
 if __name__ == "__main__":
@@ -236,14 +269,16 @@ if __name__ == "__main__":
     parser.add_argument("--tokenizer_dir", type=str, default="tokenizer/output")
     parser.add_argument("--project_dir", type=str, default="drive_mock")
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--block_size", type=int, default=1024)
+    parser.add_argument("--block_size", type=int, default=512)
     parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument("--epochs", type=int, default=None, help="학습할 에폭 수 (설정 시 max_steps 무시)")
     parser.add_argument("--max_steps", type=int, default=5000)
     parser.add_argument("--save_every", type=int, default=1000)
     parser.add_argument("--log_every", type=int, default=100)
     parser.add_argument("--warmup_steps", type=int, default=500)
     parser.add_argument("--dropout", type=float, default=0.1, help="드롭아웃 비율")
     parser.add_argument("--smoke_test", action="store_true")
+    parser.add_argument("--wandb", action="store_true", help="wandb 클라우드 로깅 활성화")
     args = parser.parse_args()
     
     train(args)

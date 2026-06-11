@@ -5,7 +5,7 @@ class DenseTransformerConfig:
     """
     Dense Transformer 모델의 모든 하이퍼파라미터 설정을 한곳에 모아 관리하는 구성 클래스.
     """
-    vocab_size: int = 32000      # BPE 토크나이저 어휘 사전 크기
+    vocab_size: int = 32000      # BPE 토크나이저 어휘 사전 크기 (학습/평가 시 토크나이저 크기에 맞춰 동적 설정됨)
     d_model: int = 768           # 토큰 임베딩 및 어텐션 은닉 차원 크기
     n_layers: int = 12           # 전체 레이어 층수 (12층 Dense)
     n_heads: int = 8             # 멀티헤드 어텐션 헤드 개수

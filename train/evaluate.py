@@ -23,8 +23,13 @@ def evaluate(args):
     # [1단계] 검증용 모델 인스턴스 객체 생성
     # -------------------------------------------------------------------------
     print("Instantiating model...")
+    from transformers import PreTrainedTokenizerFast
+    tokenizer = PreTrainedTokenizerFast.from_pretrained(args.tokenizer_dir)
+    vocab_size = len(tokenizer)
+    print(f"Loaded tokenizer from {args.tokenizer_dir}. Dynamically set vocab_size to {vocab_size}")
+
     config = DenseTransformerConfig(
-        vocab_size=32000,
+        vocab_size=vocab_size,
         d_model=768,
         n_layers=12,
         n_heads=8,
@@ -62,7 +67,12 @@ def evaluate(args):
     print(f"Loaded checkpoint at step {step}")
     
     # 가속 연산 디바이스 선택 (Mac: mps, NVIDIA GPU: cuda, 기타 디폴트: cpu)
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
     print(f"Running evaluation on: {device}")
     model.to(device)
     # 모델을 평가 모드(evaluation)로 전환하여 dropout 등 훈련용 연산을 비활성화합니다.
@@ -141,7 +151,8 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt_dir", type=str, default="drive_mock/checkpoints")
     parser.add_argument("--checkpoint_pattern", type=str, default="dense_")
     parser.add_argument("--data_dir", type=str, default="train/data")
-    parser.add_argument("--block_size", type=int, default=1024)
+    parser.add_argument("--tokenizer_dir", type=str, default="tokenizer/output")
+    parser.add_argument("--block_size", type=int, default=512)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--output_file", type=str, default="drive_mock/reports/evaluation_report.json")
     parser.add_argument("--smoke_test", action="store_true")
