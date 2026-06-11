@@ -5,78 +5,121 @@ from datasets import load_dataset
 from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
 from transformers import PreTrainedTokenizerFast
 
-def train_tokenizer(output_dir: str, num_docs: int = 50000, smoke_test: bool = False):
+def train_tokenizer(output_dir: str, num_docs: int = 50000, smoke_test: bool = False, korean: bool = False, data_dir: str = None):
     """
-    FineWeb-edu 문서 데이터셋을 학습하여 BPE(Byte-Pair Encoding) 토크나이저를 만들고 저장합니다.
+    BPE(Byte-Pair Encoding) 토크나이저를 만들고 저장합니다.
+    FineWeb-edu 문서 데이터셋 또는 한국어 대화 데이터셋을 학습에 사용합니다.
     
     Args:
         output_dir (str): 토크나이저 설정 및 사전 파일이 저장될 출력 디렉토리 경로.
-        num_docs (int): 토크나이저 학습에 동원할 FineWeb-edu 문서 크기 (기본값 50K).
-        smoke_test (bool): True일 경우 인터넷을 타지 않고 내장된 테스트 데이터셋으로 수 초 만에 간이 학습합니다.
+        num_docs (int): 영어 모드 시 학습에 동원할 FineWeb-edu 문서 크기 (기본값 50K).
+        smoke_test (bool): True일 경우 간이 학습을 진행합니다.
+        korean (bool): True일 경우 한국어 대화 토크나이저를 학습합니다.
+        data_dir (str): 한국어 대화 JSON 데이터가 있는 디렉토리 경로.
     """
     os.makedirs(output_dir, exist_ok=True)
     
     print("=" * 60)
-    print("🪙 MoE Transformer — BPE Tokenizer Training")
+    print("🪙 Transformer — BPE Tokenizer Training")
     print("=" * 60)
     
     # -------------------------------------------------------------------------
     # [1단계] 학습용 데이터 스트림(Iterator) 준비
     # -------------------------------------------------------------------------
-    # 토크나이저는 전체 데이터의 글자 빈도수 조합을 관찰해야 하므로, 메모리 절약을 위해 제너레이터(Generator)로 공급합니다.
-    if smoke_test:
-        print("Smoke-test mode activated. Using mini dataset...")
-        # 로컬 실습 및 동작 유효성 통과를 위한 10줄 문장 데이터 (10회 복사하여 총 100줄로 피딩)
-        texts = [
-            "Hello, MoE Transformer!",
-            "Mixture of Experts is interesting.",
-            "PyTorch makes deep learning easy.",
-            "Attention is all you need.",
-            "The quick brown fox jumps over the lazy dog.",
-            "Deep learning models require large amounts of data.",
-            "Natural language processing is a field of AI.",
-            "BPE tokenization splits text into subwords.",
-            "Colab provides free GPU access for researchers.",
-            "Google Drive can be used for storing checkpoints.",
-        ] * 10
-        iterator = texts
+    if korean:
+        if smoke_test:
+            print("Smoke-test mode activated for Korean. Using mini dataset...")
+            texts = [
+                "안녕하세요, 오늘 날씨가 참 좋네요.",
+                "네, 정말 나들이 가기 좋은 날씨예요.",
+                "점심은 맛있게 드셨나요?",
+                "네, 비빔밥을 먹었는데 아주 맛있었어요.",
+                "어떤 영화를 좋아하시나요?",
+                "저는 SF 영화를 즐겨 봅니다.",
+                "오늘도 좋은 하루 되세요.",
+                "감사합니다. 당신도 좋은 하루 되세요.",
+                "파이썬으로 인공지능 모델을 학습시킵니다.",
+                "트랜스포머 아키텍처는 혁신적입니다.",
+            ] * 10
+            iterator = texts
+        else:
+            if not data_dir:
+                raise ValueError("In Korean mode, --data_dir must be specified.")
+            print(f"Loading Korean dialog texts from AI-Hub JSONs under {data_dir}...")
+            import glob
+            import json
+            def korean_text_iterator():
+                count = 0
+                for json_path in glob.glob(os.path.join(data_dir, "**/*.json"), recursive=True):
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        try:
+                            data = json.load(f)
+                        except Exception as e:
+                            print(f"Failed to parse {json_path}: {e}")
+                            continue
+                    
+                    sessions = data.get('sessionInfo', [])
+                    if not sessions:
+                        dialogue = data.get('dialogue', [])
+                        if dialogue:
+                            sessions = [{'dialog': dialogue}]
+                            
+                    for session in sessions:
+                        for turn in session.get('dialog', []):
+                            utterance = turn.get('utterance', '')
+                            if utterance:
+                                yield utterance
+                                count += 1
+                                if count % 100000 == 0:
+                                    print(f"Loaded {count} utterances...")
+            iterator = korean_text_iterator()
     else:
-        print(f"Loading {num_docs} documents from HuggingFaceFW/fineweb-edu (sample-10BT)...")
-        # 데이터셋을 전부 다운로드 받지 않고, 필요할 때마다 스트리밍으로 한 문서씩 흘려보내는 streaming=True 기법을 사용합니다.
-        dataset = load_dataset("HuggingFaceFW/fineweb-edu", name="sample-10BT", split="train", streaming=True)
-        
-        # 제너레이터 함수 정의: num_docs 만큼 문서를 도출하고 멈춥니다.
-        def text_iterator():
-            count = 0
-            for item in dataset:
-                yield item["text"]
-                count += 1
-                if count >= num_docs:
-                    break
-        iterator = text_iterator()
+        if smoke_test:
+            print("Smoke-test mode activated. Using mini dataset...")
+            texts = [
+                "Hello, MoE Transformer!",
+                "Mixture of Experts is interesting.",
+                "PyTorch makes deep learning easy.",
+                "Attention is all you need.",
+                "The quick brown fox jumps over the lazy dog.",
+                "Deep learning models require large amounts of data.",
+                "Natural language processing is a field of AI.",
+                "BPE tokenization splits text into subwords.",
+                "Colab provides free GPU access for researchers.",
+                "Google Drive can be used for storing checkpoints.",
+            ] * 10
+            iterator = texts
+        else:
+            print(f"Loading {num_docs} documents from HuggingFaceFW/fineweb-edu (sample-10BT)...")
+            dataset = load_dataset("HuggingFaceFW/fineweb-edu", name="sample-10BT", split="train", streaming=True)
+            
+            def text_iterator():
+                count = 0
+                for item in dataset:
+                    yield item["text"]
+                    count += 1
+                    if count >= num_docs:
+                        break
+            iterator = text_iterator()
 
     # -------------------------------------------------------------------------
     # [2단계] 토크나이저 아키텍처 정의 (BPE + ByteLevel)
     # -------------------------------------------------------------------------
     print("Initializing BPE model and ByteLevel pre-tokenizer...")
-    # BPE 모델 생성: 신조어나 알 수 없는 언어 출현 시 낙오되지 않도록 디폴트 unk_token 지정
     tokenizer = Tokenizer(models.BPE(unk_token="<unk>"))
-    
-    # Pre-tokenizer (사전 토크나이저): 글자 단위 분절 전, 띄어쓰기/공백을 GPT-2 스타일의 바이트 문자(Ġ)로 매핑합니다.
-    # add_prefix_space=False는 단어 시작 부분 공백을 별도로 유도하지 않게 처리합니다.
     tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
-    # Decoder (디코더): 토크나이저 출력을 문장으로 디코딩할 때 공백 복원 처리를 자동으로 수행합니다.
     tokenizer.decoder = decoders.ByteLevel()
     
     # -------------------------------------------------------------------------
     # [3단계] 토크나이저 트레이너 설정 및 어휘 사전 크기 정의
     # -------------------------------------------------------------------------
-    # vocab_size: 사전 토큰 종류의 개수 (GPT 계열 및 현대 LLaMA류 모델들과 동일하게 32,000으로 고정)
-    # special_tokens: 모델 구조가 문장의 시작/끝/패딩 등을 해석하는 데 필요한 제어 토큰 정의
-    # min_frequency: 노이즈 분절을 걸러내기 위해 최소 2번 이상 본 단어 조합만 병합 사전에 추가
+    special_tokens = ["<unk>", "<s>", "</s>", "<pad>"]
+    if korean:
+        special_tokens += ["<user>", "<assistant>", "<sep>"]
+        
     trainer = trainers.BpeTrainer(
         vocab_size=32000,
-        special_tokens=["<unk>", "<s>", "</s>", "<pad>"],
+        special_tokens=special_tokens,
         min_frequency=2,
     )
     
@@ -87,7 +130,6 @@ def train_tokenizer(output_dir: str, num_docs: int = 50000, smoke_test: bool = F
     tokenizer.train_from_iterator(iterator, trainer)
     print("Tokenizer training complete.")
     
-    # 토크나이저 본체 구조 단독 저장 (raw json 파일)
     raw_path = os.path.join(output_dir, "raw_bpe_tokenizer.json")
     tokenizer.save(raw_path)
     print(f"Raw BPE tokenizer saved to {raw_path}")
@@ -95,24 +137,26 @@ def train_tokenizer(output_dir: str, num_docs: int = 50000, smoke_test: bool = F
     # -------------------------------------------------------------------------
     # [5단계] Hugging Face PreTrainedTokenizerFast 포장 (Transformers 호환)
     # -------------------------------------------------------------------------
-    # PyTorch의 배치 처리를 위한 Padding, Attention Mask 생성 등을 위해
-    # Hugging Face Transformers에서 제공하는 고속 파이썬 래퍼(Wrapper)로 포장하여 저장합니다.
     fast_tokenizer = PreTrainedTokenizerFast(
         tokenizer_object=tokenizer,
         unk_token="<unk>",
         bos_token="<s>",
         eos_token="</s>",
         pad_token="<pad>",
+        additional_special_tokens=["<user>", "<assistant>", "<sep>"] if korean else None
     )
     
-    # 최종 사전 파일 및 토크나이저 부속 설정파일 일괄 출력
     fast_tokenizer.save_pretrained(output_dir)
     print(f"PreTrainedTokenizerFast saved to {output_dir}")
     
     # -------------------------------------------------------------------------
     # [6단계] 디코딩 유효성 수동 체크 (Verification)
     # -------------------------------------------------------------------------
-    test_text = "Hello, MoE Transformer! Mixture of Experts is awesome."
+    if korean:
+        test_text = "<user>안녕하세요<sep><assistant>안녕하세요.</s>"
+    else:
+        test_text = "Hello, MoE Transformer! Mixture of Experts is awesome."
+        
     encoded = fast_tokenizer.encode(test_text)
     decoded = fast_tokenizer.decode(encoded)
     
@@ -129,6 +173,8 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default="tokenizer/output")
     parser.add_argument("--num_docs", type=int, default=50000)
     parser.add_argument("--smoke_test", action="store_true")
+    parser.add_argument("--korean", action="store_true")
+    parser.add_argument("--data_dir", type=str, default=None)
     args = parser.parse_args()
     
-    train_tokenizer(args.output_dir, args.num_docs, args.smoke_test)
+    train_tokenizer(args.output_dir, args.num_docs, args.smoke_test, args.korean, args.data_dir)
