@@ -5,7 +5,7 @@ from datasets import load_dataset
 from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
 from transformers import PreTrainedTokenizerFast
 
-def train_tokenizer(output_dir: str, num_docs: int = 50000, smoke_test: bool = False, korean: bool = False, data_dir: str = None):
+def train_tokenizer(output_dir: str, num_docs: int = 50000, smoke_test: bool = False, korean: bool = False, data_dir: str = None, hf_datasets: list = None, hf_samples: int = 10000):
     """
     BPE(Byte-Pair Encoding) 토크나이저를 만들고 저장합니다.
     FineWeb-edu 문서 데이터셋 또는 한국어 대화 데이터셋을 학습에 사용합니다.
@@ -72,6 +72,39 @@ def train_tokenizer(output_dir: str, num_docs: int = 50000, smoke_test: bool = F
                                 count += 1
                                 if count % 100000 == 0:
                                     print(f"Loaded {count} utterances...")
+                
+                # --- HF 데이터셋 샘플 추가 (토크나이저 vocab 커버리지 확장) ---
+                if hf_datasets:
+                    from datasets import load_dataset
+                    for hf_name in hf_datasets:
+                        try:
+                            print(f"  Loading HF sample: {hf_name} ({hf_samples} rows)...")
+                            ds = load_dataset(hf_name, split="train", streaming=True)
+                            sampled = 0
+                            for row in ds:
+                                text = ""
+                                # 다양한 포맷에서 텍스트 추출
+                                if "text" in row:
+                                    text = row["text"]
+                                elif "instruction" in row:
+                                    text = row.get("instruction", "") + " " + row.get("output", "") + " " + row.get("answer", "")
+                                elif "short_question" in row:
+                                    text = row.get("short_question", "") + " " + row.get("short_answer", "")
+                                elif "conversations" in row:
+                                    parts = [c.get("value", "") for c in row["conversations"] if "value" in c]
+                                    text = " ".join(parts)
+                                elif "question" in row:
+                                    text = row.get("question", "") + " " + row.get("answer", row.get("assistant", ""))
+                                elif "user" in row:
+                                    text = row.get("user", "") + " " + row.get("assistant", "")
+                                if text.strip():
+                                    yield text
+                                    sampled += 1
+                                    if sampled >= hf_samples:
+                                        break
+                            print(f"    → {sampled} rows yielded from {hf_name}")
+                        except Exception as e:
+                            print(f"  ❌ Failed to load HF dataset {hf_name}: {e}")
             iterator = korean_text_iterator()
     else:
         if smoke_test:
@@ -175,6 +208,8 @@ if __name__ == "__main__":
     parser.add_argument("--smoke_test", action="store_true")
     parser.add_argument("--korean", action="store_true")
     parser.add_argument("--data_dir", type=str, default=None)
+    parser.add_argument("--hf_datasets", nargs="*", default=[], help="토크나이저 학습에 추가할 HuggingFace 데이터셋 이름 목록 (샘플링됨)")
+    parser.add_argument("--hf_samples", type=int, default=10000, help="HF 데이터셋당 샘플링할 row 수 (기본값: 10000)")
     args = parser.parse_args()
     
-    train_tokenizer(args.output_dir, args.num_docs, args.smoke_test, args.korean, args.data_dir)
+    train_tokenizer(args.output_dir, args.num_docs, args.smoke_test, args.korean, args.data_dir, args.hf_datasets, args.hf_samples)
