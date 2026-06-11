@@ -76,3 +76,8 @@ Thumbs.db
 # --- OMC ---
 .omc/
 *.zip
+
+# --- 생성 아티팩트 및 개인 기록 ---
+conversation_history.md
+tokenizer/korean_output/
+serve/model/
