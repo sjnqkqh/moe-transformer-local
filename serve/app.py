@@ -108,11 +108,11 @@ app = FastAPI(
 
 class ChatRequest(BaseModel):
     message: str
-    temperature: float = 0.7
+    temperature: float = 1.0
     max_new_tokens: int = 100
-    top_k: int = 50
-    top_p: float = 0.9
-    repetition_penalty: float = 1.2
+    top_k: int = 30
+    top_p: float = 0.95
+    repetition_penalty: float = 1.5
 
 class ChatResponse(BaseModel):
     reply: str
@@ -446,13 +446,13 @@ async def index():
             
             <div class="parameter-control">
                 <div class="param-item">
-                    Temp: <input type="number" step="0.1" min="0.1" max="1.5" id="paramTemp" value="0.7">
+                    Temp: <input type="number" step="0.1" min="0.1" max="1.5" id="paramTemp" value="1.0">
                 </div>
                 <div class="param-item">
-                    Top-P: <input type="number" step="0.05" min="0.1" max="1.0" id="paramTopP" value="0.9">
+                    Top-P: <input type="number" step="0.05" min="0.1" max="1.0" id="paramTopP" value="0.95">
                 </div>
                 <div class="param-item">
-                    Rep Pen: <input type="number" step="0.1" min="1.0" max="2.0" id="paramRep" value="1.2">
+                    Rep Pen: <input type="number" step="0.1" min="1.0" max="2.0" id="paramRep" value="1.5">
                 </div>
                 <div class="param-item">
                     Max Tokens: <input type="number" step="10" min="10" max="256" id="paramMaxTokens" value="100">
@@ -545,9 +545,9 @@ async def index():
                         },
                         body: JSON.stringify({
                             message: text,
-                            temperature: parseFloat(paramTemp.value) || 0.7,
-                            top_p: parseFloat(paramTopP.value) || 0.9,
-                            repetition_penalty: parseFloat(paramRep.value) || 1.2,
+                            temperature: parseFloat(paramTemp.value) || 1.0,
+                            top_p: parseFloat(paramTopP.value) || 0.95,
+                            repetition_penalty: parseFloat(paramRep.value) || 1.5,
                             max_new_tokens: parseInt(paramMaxTokens.value) || 100
                         })
                     });
