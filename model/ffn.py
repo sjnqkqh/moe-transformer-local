@@ -2,13 +2,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class SwiGLU(nn.Module):
     def __init__(self, d_model: int, d_ff: int, dropout: float = 0.0):
         """
         Swish-gated Linear Unit (SwiGLU) 피드포워드 네트워크.
         GELU 기반 FFN 대비 언어 모델 당혹도(Perplexity)를 1% ~ 2% 낮추어 주어,
         현대 대부분의 LLM(LLaMA, PaLM 등)에서 채택한 FFN 레이아웃입니다.
-        
+
         Args:
             d_model (int): 입력 및 출력 벡터 차원 크기 (768).
             d_ff (int): 내부 은닉 차원 크기 (2048).
@@ -29,7 +30,7 @@ class SwiGLU(nn.Module):
         """
         Args:
             x (torch.Tensor): 입력 텐서. 형태: (Batch, Seq_Len, d_model)
-            
+
         Returns:
             torch.Tensor: SwiGLU 연산이 끝난 출력 텐서. 형태: (Batch, Seq_Len, d_model)
         """
@@ -39,6 +40,7 @@ class SwiGLU(nn.Module):
         # * 연산: 두 경로 출력 텐서의 원소별 곱셈 (Element-wise multiplication)
         # self.w3(...): 최종 차원 복사 투사 후 드롭아웃 적용
         return self.dropout(self.w3(F.silu(self.w1(x)) * self.w2(x)))
+
 
 class DenseFFN(nn.Module):
     def __init__(self, d_model: int, d_ff: int, dropout: float = 0.0):

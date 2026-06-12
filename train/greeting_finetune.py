@@ -34,14 +34,18 @@ class EarlyStopping:
         if val_loss > self.best_loss - self.delta:
             self.counter += 1
             if self.verbose:
-                print(f"  [EarlyStopping] Epoch {epoch}: 개선 없음 {self.counter}/{self.patience} "
-                      f"(val_loss={val_loss:.4f}, best={self.best_loss:.4f})")
+                print(
+                    f"  [EarlyStopping] Epoch {epoch}: 개선 없음 {self.counter}/{self.patience} "
+                    f"(val_loss={val_loss:.4f}, best={self.best_loss:.4f})"
+                )
             if self.counter >= self.patience:
                 self.early_stop = True
                 model.load_state_dict(self.best_model_state)
                 if self.verbose:
-                    print(f"  ★ 조기 중단! Epoch {self.best_epoch}의 가중치로 복원 "
-                          f"(val_loss={self.best_loss:.4f})")
+                    print(
+                        f"  ★ 조기 중단! Epoch {self.best_epoch}의 가중치로 복원 "
+                        f"(val_loss={self.best_loss:.4f})"
+                    )
                 return True
         else:
             self.best_loss = val_loss
@@ -49,7 +53,9 @@ class EarlyStopping:
             self.best_epoch = epoch
             self.counter = 0
             if self.verbose:
-                print(f"  [EarlyStopping] Epoch {epoch}: 개선! 저장 (val_loss={val_loss:.4f})")
+                print(
+                    f"  [EarlyStopping] Epoch {epoch}: 개선! 저장 (val_loss={val_loss:.4f})"
+                )
 
         return False
 
@@ -116,7 +122,10 @@ greetings = [
     ("소개해줘", "안녕! 나는 대화를 좋아하는 AI야. 반가워!"),
     ("너 이름이 뭐야?", "이름은 없어요. 당신이 지어주세요!"),
     ("무엇을 도와줄 수 있어?", "질문, 대화, 상담 무엇이든 물어보세요!"),
-    ("무엇을 도와줄 수 있어?", "궁금한 거 있으면 뭐든지 물어봐. 내가 아는 한도에서 대답해줄게."),
+    (
+        "무엇을 도와줄 수 있어?",
+        "궁금한 거 있으면 뭐든지 물어봐. 내가 아는 한도에서 대답해줄게.",
+    ),
     ("누구랑 얘기 중이야?", "저는 당신의 대화 파트너예요."),
     ("누구랑 얘기 중이야?", "나랑 얘기하고 있는 거야! 궁금한 거 있어?"),
     ("뭐라고 부를까?", "편하게 불러주세요! 기다리고 있을게요."),
@@ -158,6 +167,7 @@ print(f"Loading tokenizer from {TKNZ}...")
 tokenizer = PreTrainedTokenizerFast.from_pretrained(TKNZ)
 print(f"Vocab size: {len(tokenizer)}")
 
+
 # Tokenize
 def tokenize_pairs(pairs, block_size=512):
     all_tokens = []
@@ -173,19 +183,24 @@ def tokenize_pairs(pairs, block_size=512):
         blocks = blocks.reshape(1, -1)
     return blocks
 
+
 train_blocks = tokenize_pairs(train_greetings)
 val_blocks = tokenize_pairs(val_greetings)
 print(f"Train blocks: {len(train_blocks):,} | Val blocks: {len(val_blocks):,}")
+
 
 # Dataset
 class NumpyDataset(Dataset):
     def __init__(self, data):
         self.data = data
+
     def __len__(self):
         return len(self.data)
+
     def __getitem__(self, idx):
         x = torch.from_numpy(self.data[idx].astype(np.int64))
         return x, x
+
 
 train_loader = DataLoader(NumpyDataset(train_blocks), batch_size=8, shuffle=True)
 val_loader = DataLoader(NumpyDataset(val_blocks), batch_size=8, shuffle=False)
@@ -193,14 +208,19 @@ print(f"Train batches/epoch: {len(train_loader)} | Val batches: {len(val_loader)
 
 # Load model
 import sys
+
 sys.path.insert(0, os.path.join(PRJ, "code"))
 from model.dense_transformer import DenseTransformer
 from model.config import DenseTransformerConfig
 
 config = DenseTransformerConfig(
-    vocab_size=len(tokenizer), d_model=768,
-    n_layers=12, n_heads=8, d_ff=3072, max_seq_len=512,
-    dropout=0.15  # ✅ 드롭아웃 적용
+    vocab_size=len(tokenizer),
+    d_model=768,
+    n_layers=12,
+    n_heads=8,
+    d_ff=3072,
+    max_seq_len=512,
+    dropout=0.15,  # ✅ 드롭아웃 적용
 )
 model = DenseTransformer(config)
 
@@ -217,7 +237,9 @@ else:
         pattern = os.path.join(CKPT, "dense_korean_chat_v5_step*.pt")
         files = sorted(glob.glob(pattern), key=os.path.getmtime)
 if not files:
-    raise FileNotFoundError(f"No checkpoint found (v7 best → v7 step → v5 step fallback)")
+    raise FileNotFoundError(
+        f"No checkpoint found (v7 best → v7 step → v5 step fallback)"
+    )
 ckpt_path = files[-1]
 print(f"Loading: {ckpt_path}")
 data = torch.load(ckpt_path, map_location="cpu", weights_only=False)
@@ -225,14 +247,17 @@ sd = {}
 for k, v in data["model_state_dict"].items():
     sd[k.replace("module.", "")] = v.float()
 model.load_state_dict(sd)
-print(f"Loaded from step {data.get('step', '?')} (val_loss: {data.get('val_loss', 'N/A')})")
+print(
+    f"Loaded from step {data.get('step', '?')} (val_loss: {data.get('val_loss', 'N/A')})"
+)
 
 # Accelerate
 acc = Accelerator(mixed_precision="bf16")
 model, opt, train_loader, val_loader = acc.prepare(
     model,
     torch.optim.AdamW(model.parameters(), lr=5e-5, weight_decay=0.01),
-    train_loader, val_loader
+    train_loader,
+    val_loader,
 )
 
 # Early Stopping
@@ -282,18 +307,25 @@ acc.wait_for_everyone()
 if acc.is_main_process:
     uw = acc.unwrap_model(model)
     out = os.path.join(CKPT, "dense_korean_chat_v7_greeting.pt")
-    print(f"Saving... (사용된 epoch: {early_stopping.best_epoch if early_stopping.best_epoch else 'unknown'})")
-    torch.save({
-        "step": (epoch + 1) * steps_per_epoch,
-        "model_state_dict": uw.state_dict(),
-        "optimizer_state_dict": opt.state_dict(),
-        "loss": avg_train_loss,
-        "val_loss": avg_val_loss,
-        "best_val_loss": early_stopping.best_loss,
-        "best_epoch": early_stopping.best_epoch,
-        "early_stopped": early_stopping.early_stop,
-    }, out)
+    print(
+        f"Saving... (사용된 epoch: {early_stopping.best_epoch if early_stopping.best_epoch else 'unknown'})"
+    )
+    torch.save(
+        {
+            "step": (epoch + 1) * steps_per_epoch,
+            "model_state_dict": uw.state_dict(),
+            "optimizer_state_dict": opt.state_dict(),
+            "loss": avg_train_loss,
+            "val_loss": avg_val_loss,
+            "best_val_loss": early_stopping.best_loss,
+            "best_epoch": early_stopping.best_epoch,
+            "early_stopped": early_stopping.early_stop,
+        },
+        out,
+    )
     print(f"Saved: {out}")
     print(f"Final Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
-    print(f"(Early Stopping: {early_stopping.early_stop}, Best Epoch: {early_stopping.best_epoch})")
+    print(
+        f"(Early Stopping: {early_stopping.early_stop}, Best Epoch: {early_stopping.best_epoch})"
+    )
     print(f'To test: --checkpoint {out} --prompt "안녕" --chat --temperature 1.0')

@@ -2,6 +2,7 @@ import unittest
 from model.config import DenseTransformerConfig
 from model.dense_transformer import DenseTransformer
 
+
 class TestDenseTransformerConfig(unittest.TestCase):
     def test_default_config(self):
         """기본 설정값 검증"""
@@ -27,7 +28,7 @@ class TestDenseTransformerConfig(unittest.TestCase):
             d_ff=512,
             max_seq_len=256,
             dropout=0.2,
-            eps=1e-5
+            eps=1e-5,
         )
         self.assertEqual(config.vocab_size, 1000)
         self.assertEqual(config.d_model, 128)
@@ -55,12 +56,13 @@ class TestDenseTransformerConfig(unittest.TestCase):
             n_layers=4,
             n_heads=4,
             d_ff=1024,
-            max_seq_len=512
+            max_seq_len=512,
         )
         self.assertEqual(model.vocab_size, 20000)
         self.assertEqual(model.d_model, 256)
         self.assertEqual(model.n_layers, 4)
         self.assertEqual(model.config.n_layers, 4)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

@@ -28,7 +28,7 @@ def main():
         n_heads=8,  # 멀티헤드 어텐션 헤드 개수
         d_ff=3072,  # SwiGLU FFN 중간 은닉 차원 크기
         max_seq_len=1024,  # 최대 컨텍스트 윈도우 크기
-        dropout=0.1  # 기본 드롭아웃 확률 설정
+        dropout=0.1,  # 기본 드롭아웃 확률 설정
     )
     model = DenseTransformer(config)
     print("    ✅ Model instantiated successfully.")
@@ -47,7 +47,9 @@ def main():
         p.numel() for name, p in model.named_parameters() if "attention" in name
     )
     ffn_params = sum(
-        p.numel() for name, p in model.named_parameters() if "ffn" in name and "attention" not in name
+        p.numel()
+        for name, p in model.named_parameters()
+        if "ffn" in name and "attention" not in name
     )
     lm_head_params = model.lm_head.weight.numel()
 
@@ -58,12 +60,14 @@ def main():
     print(f"    - Token Embedding:       {emb_params:,} ({emb_params / 1e6:.2f}M)")
     print(f"    - Attention (12 layers): {attn_params:,} ({attn_params / 1e6:.2f}M)")
     print(f"    - FFN (12 layers):       {ffn_params:,} ({ffn_params / 1e6:.2f}M)")
-    print(f"    - LM Head (untied):      {lm_head_params:,} ({lm_head_params / 1e6:.2f}M)")
+    print(
+        f"    - LM Head (untied):      {lm_head_params:,} ({lm_head_params / 1e6:.2f}M)"
+    )
 
     # 가중치 크기가 정상 범주인지 assert로 최종 보장합니다.
-    assert 160e6 < total_params < 165e6, (
-        f"Expected parameters to be ~162.4M, got {total_params / 1e6:.2f}M"
-    )
+    assert (
+        160e6 < total_params < 165e6
+    ), f"Expected parameters to be ~162.4M, got {total_params / 1e6:.2f}M"
     print("    ✅ Parameter counts are within the expected range (~162.4M untied).")
 
     # -------------------------------------------------------------------------
@@ -83,9 +87,11 @@ def main():
     print(f"    - Main Loss (CrossEntropy):  {main_loss.item():.4f}")
 
     # 토큰별 어휘 예측 확률 차원이 올바른지 검사합니다: (Batch, Seq_Len, Vocab_Size)
-    assert logits.shape == (2, 8, 32000), (
-        f"Expected logits shape (2, 8, 32000), got {logits.shape}"
-    )
+    assert logits.shape == (
+        2,
+        8,
+        32000,
+    ), f"Expected logits shape (2, 8, 32000), got {logits.shape}"
     assert total_loss > 0, "손실은 양수여야 합니다."
     print("    ✅ Forward pass shape and loss values verified.")
 
@@ -118,12 +124,12 @@ def main():
     if zero_grads:
         print(f"    - ❌ Zero gradients for: {zero_grads}")
 
-    assert len(missing_grads) == 0, (
-        "모든 학습 대상 매개변수에는 미분값이 주입되어야 합니다."
-    )
-    assert len(zero_grads) == 0, (
-        "미분값 피드백이 전부 0인 매개변수가 존재해서는 안 됩니다."
-    )
+    assert (
+        len(missing_grads) == 0
+    ), "모든 학습 대상 매개변수에는 미분값이 주입되어야 합니다."
+    assert (
+        len(zero_grads) == 0
+    ), "미분값 피드백이 전부 0인 매개변수가 존재해서는 안 됩니다."
     print("    ✅ Backward pass completed and gradients are healthy.")
 
     print("\n" + "=" * 60)

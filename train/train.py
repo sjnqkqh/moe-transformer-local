@@ -22,7 +22,7 @@ from train.utils import (
     log_event,
     init_experiment,
     complete_experiment,
-    NumpyDataset
+    NumpyDataset,
 )
 
 
@@ -47,21 +47,27 @@ class EarlyStopping:
             self.best_model_state = copy.deepcopy(model.state_dict())
             self.best_step = step
             if self.verbose:
-                print(f"  [EarlyStopping] Step {step}: 최초 저장 (val_loss={val_loss:.4f})")
+                print(
+                    f"  [EarlyStopping] Step {step}: 최초 저장 (val_loss={val_loss:.4f})"
+                )
             return False
 
         if val_loss > self.best_loss - self.delta:
             # 개선 없음
             self.counter += 1
             if self.verbose:
-                print(f"  [EarlyStopping] Step {step}: 개선 없음 {self.counter}/{self.patience} "
-                      f"(val_loss={val_loss:.4f}, best={self.best_loss:.4f})")
+                print(
+                    f"  [EarlyStopping] Step {step}: 개선 없음 {self.counter}/{self.patience} "
+                    f"(val_loss={val_loss:.4f}, best={self.best_loss:.4f})"
+                )
             if self.counter >= self.patience:
                 self.early_stop = True
                 model.load_state_dict(self.best_model_state)
                 if self.verbose:
-                    print(f"  ★ Early Stopping 발동! Step {self.best_step}의 가중치로 복원 "
-                          f"(val_loss={self.best_loss:.4f})")
+                    print(
+                        f"  ★ Early Stopping 발동! Step {self.best_step}의 가중치로 복원 "
+                        f"(val_loss={self.best_loss:.4f})"
+                    )
                 return True
         else:
             # 개선됨
@@ -70,7 +76,9 @@ class EarlyStopping:
             self.best_step = step
             self.counter = 0
             if self.verbose:
-                print(f"  [EarlyStopping] Step {step}: 개선! 저장 (val_loss={val_loss:.4f})")
+                print(
+                    f"  [EarlyStopping] Step {step}: 개선! 저장 (val_loss={val_loss:.4f})"
+                )
 
         return False
 
@@ -89,18 +97,17 @@ def train(args):
     log_dir = os.path.join(args.project_dir, "logs")
 
     if args.wandb and accelerator.is_main_process:
-        wandb.init(
-            project="korean-dense-chatbot",
-            name=args.run_id,
-            config=vars(args)
-        )
+        wandb.init(project="korean-dense-chatbot", name=args.run_id, config=vars(args))
 
     # 1. 모델 객체 생성
     print("Instantiating Dense Transformer...")
     from transformers import PreTrainedTokenizerFast
+
     tokenizer = PreTrainedTokenizerFast.from_pretrained(args.tokenizer_dir)
     vocab_size = len(tokenizer)
-    print(f"Loaded tokenizer from {args.tokenizer_dir}. Dynamically set vocab_size to {vocab_size}")
+    print(
+        f"Loaded tokenizer from {args.tokenizer_dir}. Dynamically set vocab_size to {vocab_size}"
+    )
 
     config = DenseTransformerConfig(
         vocab_size=vocab_size,
@@ -109,7 +116,7 @@ def train(args):
         n_heads=8,
         d_ff=3072,
         max_seq_len=args.block_size,
-        dropout=args.dropout
+        dropout=args.dropout,
     )
     model = DenseTransformer(config)
 
@@ -117,27 +124,41 @@ def train(args):
     if accelerator.is_main_process:
         total_params = sum(p.numel() for p in model.parameters())
         emb_params = model.token_embeddings.weight.numel()
-        attn_params = sum(p.numel() for name, p in model.named_parameters() if "attention" in name)
-        ffn_params = sum(p.numel() for name, p in model.named_parameters() if "ffn" in name and "attention" not in name)
+        attn_params = sum(
+            p.numel() for name, p in model.named_parameters() if "attention" in name
+        )
+        ffn_params = sum(
+            p.numel()
+            for name, p in model.named_parameters()
+            if "ffn" in name and "attention" not in name
+        )
         lm_head_params = model.lm_head.weight.numel()
 
         print("-" * 50)
         print("Model Architecture Parameter Breakdown:")
-        print(f"  - Total Parameters:      {total_params:,} ({total_params / 1e6:.2f}M)")
+        print(
+            f"  - Total Parameters:      {total_params:,} ({total_params / 1e6:.2f}M)"
+        )
         print(f"  - Token Embedding:       {emb_params:,} ({emb_params / 1e6:.2f}M)")
         print(f"  - Attention (12 layers): {attn_params:,} ({attn_params / 1e6:.2f}M)")
         print(f"  - FFN (12 layers):       {ffn_params:,} ({ffn_params / 1e6:.2f}M)")
-        print(f"  - LM Head (untied):      {lm_head_params:,} ({lm_head_params / 1e6:.2f}M)")
+        print(
+            f"  - LM Head (untied):      {lm_head_params:,} ({lm_head_params / 1e6:.2f}M)"
+        )
         print("-" * 50)
 
     # 2. 학습 데이터 로드
     train_npy = os.path.join(args.data_dir, "train.npy")
     if not os.path.exists(train_npy):
-        raise FileNotFoundError(f"Training dataset not found at {train_npy}. Please run prepare_data.py first.")
+        raise FileNotFoundError(
+            f"Training dataset not found at {train_npy}. Please run prepare_data.py first."
+        )
 
     train_dataset = NumpyDataset(train_npy)
     batch_size = 2 if args.smoke_test else args.batch_size
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size, shuffle=True, drop_last=True
+    )
 
     # 3. 검증 데이터 로드 (val.npy가 있으면 사용, 없으면 건너뜀)
     val_npy = os.path.join(args.data_dir, "val.npy")
@@ -145,10 +166,14 @@ def train(args):
     if os.path.exists(val_npy):
         val_dataset = NumpyDataset(val_npy)
         val_batch_size = batch_size * 2  # 검증은 메모리가 여유로우므로 2배
-        val_loader = DataLoader(val_dataset, batch_size=val_batch_size, shuffle=False, drop_last=False)
+        val_loader = DataLoader(
+            val_dataset, batch_size=val_batch_size, shuffle=False, drop_last=False
+        )
         print(f"Loaded validation set: {len(val_dataset):,} blocks from {val_npy}")
     else:
-        print(f"⚠️ Validation set not found at {val_npy}. Early Stopping을 사용하려면 prepare_data.py로 val.npy를 생성하세요.")
+        print(
+            f"⚠️ Validation set not found at {val_npy}. Early Stopping을 사용하려면 prepare_data.py로 val.npy를 생성하세요."
+        )
 
     # 4. 최적화기(Optimizer) 설정
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
@@ -158,7 +183,8 @@ def train(args):
         args.max_steps = len(train_loader) * args.epochs
         if accelerator.is_main_process:
             print(
-                f"Calculated max_steps: {args.max_steps} for {args.epochs} epochs (1 epoch = {len(train_loader)} steps)")
+                f"Calculated max_steps: {args.max_steps} for {args.epochs} epochs (1 epoch = {len(train_loader)} steps)"
+            )
 
     # 학습률 스케줄러
     max_steps = 10 if args.smoke_test else args.max_steps
@@ -167,7 +193,9 @@ def train(args):
     def lr_lambda(current_step):
         if current_step < warmup_steps:
             return float(current_step) / float(max(1, warmup_steps))
-        progress = float(current_step - warmup_steps) / float(max(1, max_steps - warmup_steps))
+        progress = float(current_step - warmup_steps) / float(
+            max(1, max_steps - warmup_steps)
+        )
         return 0.5 * (1.0 + np.cos(np.pi * min(1.0, progress)))
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
@@ -198,7 +226,7 @@ def train(args):
     early_stopping = EarlyStopping(
         patience=args.patience,
         delta=args.min_delta,
-        verbose=accelerator.is_main_process
+        verbose=accelerator.is_main_process,
     )
 
     step = start_step
@@ -241,12 +269,17 @@ def train(args):
             if accelerator.is_main_process:
                 curr_loss_val = loss.item()
                 if prev_loss is not None and curr_loss_val > prev_loss * 1.2:
-                    log_event(log_dir, args.run_id, "loss_spike", {
-                        "step": step,
-                        "previous_loss": prev_loss,
-                        "current_loss": curr_loss_val,
-                        "grad_norm": grad_norm
-                    })
+                    log_event(
+                        log_dir,
+                        args.run_id,
+                        "loss_spike",
+                        {
+                            "step": step,
+                            "previous_loss": prev_loss,
+                            "current_loss": curr_loss_val,
+                            "grad_norm": grad_norm,
+                        },
+                    )
                 prev_loss = curr_loss_val
 
             # 학습 로그 출력
@@ -278,38 +311,56 @@ def train(args):
                         "grad_norm": grad_norm,
                         "gpu_memory_gb": gpu_memory_gb,
                         "tokens_per_sec": tokens_per_sec,
-                        "epoch_progress": step / max_steps
+                        "epoch_progress": step / max_steps,
                     }
 
                     log_metrics(log_dir, args.run_id, step, metrics)
                     print(
-                        f"Step {step}/{max_steps} | Loss: {total_l_val:.4f} | PPL: {ppl:.2f} | lr: {lr:.2e} | Speed: {tokens_per_sec:.0f} tok/s")
+                        f"Step {step}/{max_steps} | Loss: {total_l_val:.4f} | PPL: {ppl:.2f} | lr: {lr:.2e} | Speed: {tokens_per_sec:.0f} tok/s"
+                    )
 
                     if args.wandb:
-                        wandb.log({
-                            "train/loss": total_l_val,
-                            "train/main_loss": main_l_val,
-                            "train/ppl": ppl,
-                            "train/lr": lr,
-                            "train/grad_norm": grad_norm,
-                            "system/gpu_memory_gb": gpu_memory_gb,
-                            "system/tokens_per_sec": tokens_per_sec,
-                            "system/epoch_progress": step / max_steps
-                        }, step=step)
+                        wandb.log(
+                            {
+                                "train/loss": total_l_val,
+                                "train/main_loss": main_l_val,
+                                "train/ppl": ppl,
+                                "train/lr": lr,
+                                "train/grad_norm": grad_norm,
+                                "system/gpu_memory_gb": gpu_memory_gb,
+                                "system/tokens_per_sec": tokens_per_sec,
+                                "system/epoch_progress": step / max_steps,
+                            },
+                            step=step,
+                        )
 
             # 체크포인트 저장 (주기적)
             save_interval = 2 if args.smoke_test else args.save_every
             if step % save_interval == 0 or step == max_steps:
                 accelerator.wait_for_everyone()
                 if accelerator.is_main_process:
-                    save_checkpoint(ckpt_dir, model, optimizer, scheduler, step, loss.item(), pattern)
-                    log_event(log_dir, args.run_id, "checkpoint", {
-                        "step": step,
-                        "loss": loss.item()
-                    })
+                    save_checkpoint(
+                        ckpt_dir,
+                        model,
+                        optimizer,
+                        scheduler,
+                        step,
+                        loss.item(),
+                        pattern,
+                    )
+                    log_event(
+                        log_dir,
+                        args.run_id,
+                        "checkpoint",
+                        {"step": step, "loss": loss.item()},
+                    )
 
             # --- 검증(Validation) ---
-            if val_loader is not None and args.val_every > 0 and step % args.val_every == 0:
+            if (
+                val_loader is not None
+                and args.val_every > 0
+                and step % args.val_every == 0
+            ):
                 model.eval()
                 total_val_loss = 0.0
                 num_val_batches = 0
@@ -325,44 +376,70 @@ def train(args):
                 avg_val_ppl = np.exp(min(20, avg_val_loss))
 
                 if accelerator.is_main_process:
-                    print(f"  ▶ Validation: step {step} | val_loss={avg_val_loss:.4f} | val_ppl={avg_val_ppl:.2f}")
+                    print(
+                        f"  ▶ Validation: step {step} | val_loss={avg_val_loss:.4f} | val_ppl={avg_val_ppl:.2f}"
+                    )
 
                     # Best validation checkpoint 저장
                     if avg_val_loss < best_val_loss:
                         best_val_loss = avg_val_loss
-                        best_checkpoint_path = os.path.join(ckpt_dir, f"dense_{args.run_id}_best.pt")
+                        best_checkpoint_path = os.path.join(
+                            ckpt_dir, f"dense_{args.run_id}_best.pt"
+                        )
                         accelerator.wait_for_everyone()
                         uw = accelerator.unwrap_model(model)
-                        torch.save({
-                            "step": step,
-                            "model_state_dict": uw.state_dict(),
-                            "optimizer_state_dict": optimizer.state_dict(),
-                            "scheduler_state_dict": scheduler.state_dict(),
-                            "val_loss": avg_val_loss,
-                            "val_ppl": avg_val_ppl,
-                        }, best_checkpoint_path)
+                        torch.save(
+                            {
+                                "step": step,
+                                "model_state_dict": uw.state_dict(),
+                                "optimizer_state_dict": optimizer.state_dict(),
+                                "scheduler_state_dict": scheduler.state_dict(),
+                                "val_loss": avg_val_loss,
+                                "val_ppl": avg_val_ppl,
+                            },
+                            best_checkpoint_path,
+                        )
                         best_checkpoint_saved = True
-                        print(f"  ⭐ Best validation checkpoint saved (val_loss={avg_val_loss:.4f})")
+                        print(
+                            f"  ⭐ Best validation checkpoint saved (val_loss={avg_val_loss:.4f})"
+                        )
 
                     # Wandb에 validation metrics 로깅
                     if args.wandb:
-                        wandb.log({
-                            "val/loss": avg_val_loss,
-                            "val/ppl": avg_val_ppl,
-                        }, step=step)
+                        wandb.log(
+                            {
+                                "val/loss": avg_val_loss,
+                                "val/ppl": avg_val_ppl,
+                            },
+                            step=step,
+                        )
 
                     # Log to file
-                    log_metrics(log_dir, args.run_id, step, {
-                        "val_loss": avg_val_loss,
-                        "val_ppl": avg_val_ppl,
-                    })
+                    log_metrics(
+                        log_dir,
+                        args.run_id,
+                        step,
+                        {
+                            "val_loss": avg_val_loss,
+                            "val_ppl": avg_val_ppl,
+                        },
+                    )
 
                 # Early Stopping 체크 (validation 기준)
-                if early_stopping(avg_val_loss, accelerator.unwrap_model(model) if hasattr(model, 'module') else model,
-                                  step):
+                if early_stopping(
+                    avg_val_loss,
+                    (
+                        accelerator.unwrap_model(model)
+                        if hasattr(model, "module")
+                        else model
+                    ),
+                    step,
+                ):
                     # Early Stopping 발동 — best checkpoint가 있으면 그걸로 저장
                     if best_checkpoint_saved:
-                        final_path = os.path.join(ckpt_dir, f"dense_{args.run_id}_final_early_stop.pt")
+                        final_path = os.path.join(
+                            ckpt_dir, f"dense_{args.run_id}_final_early_stop.pt"
+                        )
                         shutil_copy_if_exists(best_checkpoint_path, final_path)
                     accelerator.wait_for_everyone()
                     break  # 학습 종료
@@ -374,14 +451,19 @@ def train(args):
         print("Training complete!")
 
         # Early Stopping으로 종료되지 않은 경우에도 best weight로 복원
-        if val_loader is not None and not early_stopping.early_stop and best_checkpoint_saved:
+        if (
+            val_loader is not None
+            and not early_stopping.early_stop
+            and best_checkpoint_saved
+        ):
             print(
-                f"Early Stopping 미발동. Best checkpoint (step {early_stopping.best_step}, val_loss={early_stopping.best_loss:.4f})로 복원합니다.")
+                f"Early Stopping 미발동. Best checkpoint (step {early_stopping.best_step}, val_loss={early_stopping.best_loss:.4f})로 복원합니다."
+            )
             model.load_state_dict(early_stopping.best_model_state)
 
         final_metrics = {
             "final_step": step,
-            "final_loss": loss.item() if 'loss' in locals() else -1.0,
+            "final_loss": loss.item() if "loss" in locals() else -1.0,
             "best_val_loss": best_val_loss if best_val_loss != float("inf") else None,
             "early_stopped": early_stopping.early_stop,
             "best_step": early_stopping.best_step,
@@ -395,36 +477,60 @@ def train(args):
 def shutil_copy_if_exists(src, dst):
     """파일이 존재하면 복사, 없으면 무시"""
     import shutil
+
     if os.path.exists(src):
         shutil.copy2(src, dst)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run_id", type=str, required=True, help="Unique run ID, e.g. r001")
-    parser.add_argument("--name", type=str, default="dense_baseline", help="Description name")
+    parser.add_argument(
+        "--run_id", type=str, required=True, help="Unique run ID, e.g. r001"
+    )
+    parser.add_argument(
+        "--name", type=str, default="dense_baseline", help="Description name"
+    )
     parser.add_argument("--data_dir", type=str, default="train/data")
     parser.add_argument("--tokenizer_dir", type=str, default="tokenizer/output")
     parser.add_argument("--project_dir", type=str, default="drive_mock")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--block_size", type=int, default=512)
     parser.add_argument("--lr", type=float, default=3e-4)
-    parser.add_argument("--epochs", type=int, default=None, help="학습할 에폭 수 (설정 시 max_steps 무시)")
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=None,
+        help="학습할 에폭 수 (설정 시 max_steps 무시)",
+    )
     parser.add_argument("--max_steps", type=int, default=5000)
     parser.add_argument("--save_every", type=int, default=1000)
     parser.add_argument("--log_every", type=int, default=100)
     parser.add_argument("--warmup_steps", type=int, default=500)
     parser.add_argument("--dropout", type=float, default=0.15, help="드롭아웃 비율")
     parser.add_argument("--smoke_test", action="store_true")
-    parser.add_argument("--wandb", action="store_true", help="wandb 클라우드 로깅 활성화")
+    parser.add_argument(
+        "--wandb", action="store_true", help="wandb 클라우드 로깅 활성화"
+    )
 
     # --- Early Stopping 관련 인자 ---
-    parser.add_argument("--patience", type=int, default=5,
-                        help="Validation loss 개선 없이 기다릴 step 횟수 (val_every 단위)")
-    parser.add_argument("--min_delta", type=float, default=1e-3,
-                        help="개선으로 인정할 최소 val_loss 변화량")
-    parser.add_argument("--val_every", type=int, default=500,
-                        help="몇 step마다 validation을 실행할지 (0이면 validation 스킵)")
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=5,
+        help="Validation loss 개선 없이 기다릴 step 횟수 (val_every 단위)",
+    )
+    parser.add_argument(
+        "--min_delta",
+        type=float,
+        default=1e-3,
+        help="개선으로 인정할 최소 val_loss 변화량",
+    )
+    parser.add_argument(
+        "--val_every",
+        type=int,
+        default=500,
+        help="몇 step마다 validation을 실행할지 (0이면 validation 스킵)",
+    )
 
     args = parser.parse_args()
 

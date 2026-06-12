@@ -1,13 +1,14 @@
 import torch
 import torch.nn as nn
 
+
 class RMSNorm(nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
         """
         Root Mean Square Layer Normalization (RMSNorm).
         표준 LayerNorm 대비 평균(Mean)을 빼는 연산을 생략하여 계산 비용을 약 7% ~ 10% 절감하는 경량 노멀라이제이션.
         Gemma, LLaMA 등 현대 거대 언어 모델(LLM)들의 표준 정규화 기법입니다.
-        
+
         Args:
             dim (int): 모델의 임베딩 차원 (d_model, 예: 768).
             eps (float): 0분모 나눗셈 방지를 위한 아주 작은 스칼라 상수 (1e-6).
@@ -30,7 +31,7 @@ class RMSNorm(nn.Module):
         """
         Args:
             x (torch.Tensor): 입력 텐서. 형태: (Batch, Seq_Len, d_model)
-            
+
         Returns:
             torch.Tensor: RMS 정규화 및 크기 보정(Weight 곱)이 완료된 텐서.
         """

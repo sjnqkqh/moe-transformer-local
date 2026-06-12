@@ -19,6 +19,7 @@ model = None
 tokenizer = None
 device = None
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -33,7 +34,7 @@ async def lifespan(app: FastAPI):
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
-        
+
     print(f"🚀 FastAPI starting up. Using device: {device}")
 
     # 토크나이저 로드
@@ -41,7 +42,7 @@ async def lifespan(app: FastAPI):
     if not os.path.exists(tokenizer_path):
         # 만약 로컬에 korean_output이 없으면 output을 폴백으로 체크
         tokenizer_path = "tokenizer/output"
-        
+
     print(f"Loading tokenizer from {tokenizer_path}...")
     try:
         tokenizer = PreTrainedTokenizerFast.from_pretrained(tokenizer_path)
@@ -58,7 +59,7 @@ async def lifespan(app: FastAPI):
         n_heads=8,
         d_ff=3072,
         max_seq_len=512,
-        dropout=0.0
+        dropout=0.0,
     )
     model = DenseTransformer(config)
 
@@ -68,19 +69,21 @@ async def lifespan(app: FastAPI):
         print(f"⚠️ Checkpoint not found at {model_path}. Trying smoke test model...")
         model_path = "test_project/checkpoints/dense_chat_smoke_step10.pt"
         if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model checkpoint not found. Train the model first.")
+            raise FileNotFoundError(
+                f"Model checkpoint not found. Train the model first."
+            )
 
     print(f"Loading model checkpoint from {model_path}...")
     try:
         ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
-        
+
         # module. 접두사 제거 로직 (DDP 대응)
-        state_dict = ckpt['model_state_dict']
+        state_dict = ckpt["model_state_dict"]
         clean_state_dict = {}
         for k, v in state_dict.items():
             key = k.replace("module.", "")
             clean_state_dict[key] = v.float()
-            
+
         model.load_state_dict(clean_state_dict)
         model.to(device)
         model.eval()
@@ -98,13 +101,15 @@ async def lifespan(app: FastAPI):
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
+
 # FastAPI 앱 생성
 app = FastAPI(
     title="Korean Chatbot Server",
     description="Dense Transformer 기반의 한국어 챗봇 서비스 API",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
+
 
 class ChatRequest(BaseModel):
     message: str
@@ -114,8 +119,10 @@ class ChatRequest(BaseModel):
     top_p: float = 0.95
     repetition_penalty: float = 1.5
 
+
 class ChatResponse(BaseModel):
     reply: str
+
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
@@ -125,7 +132,7 @@ async def chat(req: ChatRequest):
     global model, tokenizer, device
     if model is None or tokenizer is None:
         raise HTTPException(status_code=503, detail="Model is not loaded yet.")
-    
+
     try:
         reply = chat_generate(
             model=model,
@@ -136,12 +143,13 @@ async def chat(req: ChatRequest):
             top_k=req.top_k,
             top_p=req.top_p,
             repetition_penalty=req.repetition_penalty,
-            device=device
+            device=device,
         )
         return ChatResponse(reply=reply)
     except Exception as e:
         print(f"Error during generation: {e}")
         raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+
 
 @app.get("/", response_class=HTMLResponse)
 async def index():

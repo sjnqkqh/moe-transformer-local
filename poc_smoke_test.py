@@ -2,6 +2,7 @@
 moe-transformer-local — 의존성 PoC (Smoke Test)
 로컬 M2 Pro CPU 모드에서 모든 import와 기본 연산이 정상 동작하는지 검증
 """
+
 import sys, platform, math
 
 print("=" * 60)
@@ -16,6 +17,7 @@ print(f"    Arch:   {platform.machine()}")
 # --- 2. PyTorch ---
 print(f"\n[2/6] PyTorch")
 import torch
+
 print(f"    Version: {torch.__version__}")
 print(f"    CPU cores: {torch.get_num_threads()}")
 print(f"    MPS available: {torch.backends.mps.is_available()}")
@@ -29,9 +31,11 @@ assert z.shape == (2, 2048), f"matmul failed: {z.shape}"
 print(f"    ✅ matmul (2,768) @ (768,2048) = {list(z.shape)}")
 
 # RMSNorm 수동 검증
-rms = torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + 1e-6)
+rms = torch.sqrt((x**2).mean(dim=-1, keepdim=True) + 1e-6)
 normed = x / rms
-print(f"    ✅ RMSNorm pass (mean={normed.mean().item():.4f}, std={normed.std().item():.4f})")
+print(
+    f"    ✅ RMSNorm pass (mean={normed.mean().item():.4f}, std={normed.std().item():.4f})"
+)
 
 # --- 3. HuggingFace Tokenizers ---
 print(f"\n[3/6] Tokenizers (BPE 학습)")
@@ -86,10 +90,14 @@ print(f"    ✅ Tokens: {tokens}")
 print(f"\n[5/6] Datasets")
 from datasets import Dataset, Features, Value
 
-dummy_data = Dataset.from_dict({
-    "input_ids": [encoded["input_ids"] * 4],  # 반복으로 길이 늘림 (block_size=16 정도)
-    "labels": [encoded["input_ids"] * 4],
-})
+dummy_data = Dataset.from_dict(
+    {
+        "input_ids": [
+            encoded["input_ids"] * 4
+        ],  # 반복으로 길이 늘림 (block_size=16 정도)
+        "labels": [encoded["input_ids"] * 4],
+    }
+)
 print(f"    ✅ Dataset created: {len(dummy_data)} samples")
 print(f"    ✅ Features: {dummy_data.features}")
 print(f"    ✅ Sample length: {len(dummy_data[0]['input_ids'])}")
@@ -104,6 +112,7 @@ print(f"    ✅ Mixed precision: {accelerator.mixed_precision}")
 
 # Accelerate로 model/dataloader 준비
 from torch.utils.data import DataLoader
+
 dummy_loader = DataLoader(dummy_data, batch_size=2)
 model = torch.nn.Linear(768, 32000)  # 간단한 LM head 대용
 model, loader = accelerator.prepare(model, dummy_loader)
@@ -111,6 +120,7 @@ print(f"    ✅ Accelerator prepare OK")
 
 print("\n" + "=" * 60)
 import importlib.metadata as meta
+
 print("🎯 ALL DEPENDENCY CHECKS PASSED")
 print(f"    torch={torch.__version__}")
 print(f"    transformers={meta.version('transformers')}")
