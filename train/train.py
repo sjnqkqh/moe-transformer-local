@@ -511,6 +511,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--wandb", action="store_true", help="wandb 클라우드 로깅 활성화"
     )
+    parser.add_argument("--patience", type=int, default=5)
+    parser.add_argument("--min_delta", type=float, default=1e-3)
+    parser.add_argument("--val_every", type=int, default=500)
 
     # --- Early Stopping 관련 인자 ---
     parser.add_argument(
