@@ -2,7 +2,7 @@ import os
 import zipfile
 
 
-def zip_project(output_filename="moe_code.zip"):
+def zip_project(output_filename="transformer.zip"):
     """
     Colab 전송을 위해 핵심 소스코드 및 설정 파일들을 zip 파일로 압축합니다.
     __pycache__, 로컬 테스트 체크포인트, 임시 파일들은 자동으로 제외됩니다.
