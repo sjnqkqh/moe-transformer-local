@@ -52,49 +52,53 @@ def train_tokenizer(
             ] * 10
             iterator = texts
         else:
-            if not data_dir:
-                raise ValueError("In Korean mode, --data_dir must be specified.")
-            print(f"Loading Korean dialog texts from AI-Hub JSONs under {data_dir}...")
+            if not data_dir and not hf_datasets:
+                raise ValueError("Korean 모드: --data_dir 또는 --hf_datasets 중 최소 하나 필요.")
+            if data_dir:
+                print(f"Loading Korean dialog texts from AI-Hub JSONs under {data_dir}...")
             import glob
             import json
 
             def korean_text_iterator():
                 count = 0
-                for json_path in glob.glob(
-                    os.path.join(data_dir, "**/*.json"), recursive=True
-                ):
-                    with open(json_path, "r", encoding="utf-8") as f:
-                        try:
-                            data = json.load(f)
-                        except Exception as e:
-                            print(f"Failed to parse {json_path}: {e}")
-                            continue
+                if data_dir and os.path.isdir(data_dir):
+                    for json_path in glob.glob(
+                        os.path.join(data_dir, "**/*.json"), recursive=True
+                    ):
+                        with open(json_path, "r", encoding="utf-8") as f:
+                            try:
+                                data = json.load(f)
+                            except Exception as e:
+                                print(f"Failed to parse {json_path}: {e}")
+                                continue
 
-                    sessions = data.get("sessionInfo", [])
-                    if not sessions:
-                        dialogue = data.get("dialogue", [])
-                        if dialogue:
-                            sessions = [{"dialog": dialogue}]
+                        sessions = data.get("sessionInfo", [])
+                        if not sessions:
+                            dialogue = data.get("dialogue", [])
+                            if dialogue:
+                                sessions = [{"dialog": dialogue}]
 
-                    for session in sessions:
-                        for turn in session.get("dialog", []):
-                            utterance = turn.get("utterance", "")
-                            if utterance:
-                                yield utterance
-                                count += 1
-                                if count % 100000 == 0:
-                                    print(f"Loaded {count} utterances...")
+                        for session in sessions:
+                            for turn in session.get("dialog", []):
+                                utterance = turn.get("utterance", "")
+                                if utterance:
+                                    yield utterance
+                                    count += 1
+                                    if count % 100000 == 0:
+                                        print(f"Loaded {count} utterances...")
 
-                # --- HF 데이터셋 샘플 추가 (토크나이저 vocab 커버리지 확장) ---
+                # --- HF 데이터셋 샘플 추가 (vocab 커버리지 확장) ---
                 if hf_datasets:
                     from datasets import load_dataset
 
-                    for hf_name in hf_datasets:
+                    for hf_entry in hf_datasets:
+                        # "name:config" 형식 지원
+                        hf_name, _, hf_config = hf_entry.partition(":")
+                        hf_config = hf_config or None
+                        tag = f"{hf_name}" + (f":{hf_config}" if hf_config else "")
                         try:
-                            print(
-                                f"  Loading HF sample: {hf_name} ({hf_samples} rows)..."
-                            )
-                            ds = load_dataset(hf_name, split="train", streaming=True)
+                            print(f"  Loading HF sample: {tag} ({hf_samples} rows)...")
+                            ds = load_dataset(hf_name, hf_config, split="train", streaming=True)
                             sampled = 0
                             for row in ds:
                                 text = ""
@@ -139,9 +143,9 @@ def train_tokenizer(
                                     sampled += 1
                                     if sampled >= hf_samples:
                                         break
-                            print(f"    → {sampled} rows yielded from {hf_name}")
+                            print(f"    → {sampled} rows yielded from {tag}")
                         except Exception as e:
-                            print(f"  ❌ Failed to load HF dataset {hf_name}: {e}")
+                            print(f"  ❌ Failed to load HF dataset {tag}: {e}")
 
             iterator = korean_text_iterator()
     else:
