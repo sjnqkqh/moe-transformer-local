@@ -17,5 +17,11 @@ numpy                       # 텐서 통계/분석
 matplotlib                  # Loss 곡선 시각화
 tqdm                        # 진행바
 
-# ---------- Colab 전용 (로컬 불필요) ----------
-# wandb                      # ← 로컬에서는 선택. Colab에서만 필요
+# ---------- Colab 전용 및 MLOps ----------
+wandb
+
+
+# ---------- Web Serving ----------
+fastapi>=0.100.0
+uvicorn>=0.23.0
+
