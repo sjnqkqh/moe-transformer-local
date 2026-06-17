@@ -198,11 +198,14 @@ def train(args):
         print(f"⚠️ val.npy not found at {val_npy}. Early Stopping 비활성화.")
 
     # 4. 옵티마이저 & 스케줄러 —————————————————————————————————————
+    # fused=True: CUDA 가용 시 elementwise 커널을 하나로 묶어 옵티마이저 step 2~3배 가속
+    use_fused = torch.cuda.is_available()
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=args.lr,
         betas=(0.9, 0.95),
         weight_decay=args.weight_decay,
+        fused=use_fused,
     )
 
     if args.epochs is not None:
