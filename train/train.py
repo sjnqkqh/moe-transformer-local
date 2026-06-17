@@ -153,6 +153,12 @@ def train(args):
         if accelerator.is_main_process:
             print("✅ Gradient checkpointing 활성화 (활성화 메모리 ~4배 절감)")
 
+    # torch.compile — A100 BF16에서 +25~40% 처리량 (첫 step에 1~2분 컴파일)
+    if args.compile:
+        if accelerator.is_main_process:
+            print("✅ torch.compile 활성화 (첫 step에 1~2분 컴파일 소요)")
+        model = torch.compile(model)
+
     if accelerator.is_main_process:
         total_params = sum(p.numel() for p in model.parameters())
         emb_params = model.token_embeddings.weight.numel()
@@ -462,6 +468,8 @@ if __name__ == "__main__":
                         help="gradient accumulation steps (메모리 절약용 micro-batch 반복)")
     parser.add_argument("--grad_checkpoint", action="store_true",
                         help="gradient checkpointing 활성화 (활성화 메모리 ~4배 절감, 속도 -25%%)")
+    parser.add_argument("--compile", action="store_true",
+                        help="torch.compile 활성화 (학습 속도 +25~40%%, 첫 step에 1~2분 컴파일 소요)")
     parser.add_argument("--block_size", type=int, default=2048)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--min_lr", type=float, default=3e-5, help="Cosine decay 최소 LR")
