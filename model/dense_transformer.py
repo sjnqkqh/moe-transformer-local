@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 from model.normalization import RMSNorm
 from model.rope import precompute_freqs_cis
 from model.transformer_block import TransformerBlock
@@ -60,6 +61,16 @@ class DenseTransformer(nn.Module):
         freqs_cis = precompute_freqs_cis(self.d_model // self.n_heads, self.max_seq_len)
         self.register_buffer("freqs_cis", freqs_cis, persistent=False)
 
+        # [구조 6] gradient checkpointing 플래그 (메모리 절감, 학습 중 활성화)
+        self.gradient_checkpointing = False
+
+    def gradient_checkpointing_enable(self):
+        """학습 시 호출하여 활성화 메모리를 ~4배 절감 (속도는 ~25% 감소)."""
+        self.gradient_checkpointing = True
+
+    def gradient_checkpointing_disable(self):
+        self.gradient_checkpointing = False
+
     def forward(self, input_ids: torch.Tensor, labels: torch.Tensor = None):
         """
         Args:
@@ -82,9 +93,12 @@ class DenseTransformer(nn.Module):
         # 2단계: 현재 시퀀스 길이 T에 맞춰 RoPE 주파수 버퍼 잘라오기
         freqs_cis = self.freqs_cis[:T]
 
-        # 3단계: 모든 레이어 순전파 실행
+        # 3단계: 모든 레이어 순전파 실행 (학습 중 + checkpointing 활성 시 메모리 절감)
         for layer in self.layers:
-            x = layer(x, freqs_cis)
+            if self.gradient_checkpointing and self.training:
+                x = checkpoint(layer, x, freqs_cis, use_reentrant=False)
+            else:
+                x = layer(x, freqs_cis)
 
         # 4단계: 최종 정규화 및 분류기를 통한 로짓(Logits) 변환
         x = self.norm(x)
