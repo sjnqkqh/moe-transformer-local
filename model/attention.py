@@ -29,11 +29,12 @@ class MultiHeadAttention(nn.Module):
         self.resid_dropout = nn.Dropout(p=dropout)
         # causal mask 버퍼 불필요 — SDPA의 is_causal=True가 대신 처리
 
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor) -> torch.Tensor:
         """
         Args:
             x         : (B, T, d_model)
-            freqs_cis : (T, head_dim // 2) — RoPE 주파수 텐서
+            freqs_cos : (T, head_dim // 2) — RoPE cos(θ) 텐서
+            freqs_sin : (T, head_dim // 2) — RoPE sin(θ) 텐서
 
         Returns:
             (B, T, d_model)
@@ -51,8 +52,8 @@ class MultiHeadAttention(nn.Module):
         xv = xv.view(B, T, self.n_heads, self.head_dim)
 
         # [3] RoPE 위치 인코딩
-        xq = apply_rotary_emb(xq, freqs_cis)
-        xk = apply_rotary_emb(xk, freqs_cis)
+        xq = apply_rotary_emb(xq, freqs_cos, freqs_sin)
+        xk = apply_rotary_emb(xk, freqs_cos, freqs_sin)
 
         # [4] SDPA 입력 형태로 변환: (B, H, T, head_dim)
         xq = xq.transpose(1, 2)

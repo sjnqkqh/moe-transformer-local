@@ -1,14 +1,15 @@
-import os
-import sys
-import time
 import argparse
 import datetime
-import copy
+import os
+import shutil
+import sys
+import time
+
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
-from accelerate import Accelerator
 import wandb
+from accelerate import Accelerator
+from torch.utils.data import DataLoader
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -37,25 +38,28 @@ def make_kst_run_dir(base_dir: str, run_id: str) -> str:
 
 
 class EarlyStopping:
-    """조기 중단 — 검증 손실이 개선되지 않으면 학습 중단"""
+    """조기 중단 — 검증 손실이 개선되지 않으면 학습 중단.
+    
+    best checkpoint는 디스크 파일로 관리 (deepcopy 제거).
+    1.3B 모델에서 state_dict deepcopy는 ~2.6GB 메모리 복제 + 수초 지연을 유발하므로,
+    별도 best checkpoint 파일 저장 로직과 연동합니다.
+    """
 
     def __init__(self, patience=8, delta=1e-3, verbose=True):
         self.patience = patience
         self.delta = delta
         self.verbose = verbose
         self.best_loss = None
-        self.best_model_state = None
         self.best_step = 0
         self.counter = 0
         self.early_stop = False
 
-    def __call__(self, val_loss, model, step):
+    def __call__(self, val_loss, step):
         if self.best_loss is None:
             self.best_loss = val_loss
-            self.best_model_state = copy.deepcopy(model.state_dict())
             self.best_step = step
             if self.verbose:
-                print(f"  [EarlyStopping] Step {step}: 최초 저장 (val_loss={val_loss:.4f})")
+                print(f"  [EarlyStopping] Step {step}: 최초 기록 (val_loss={val_loss:.4f})")
             return False
 
         if val_loss > self.best_loss - self.delta:
@@ -67,20 +71,18 @@ class EarlyStopping:
                 )
             if self.counter >= self.patience:
                 self.early_stop = True
-                model.load_state_dict(self.best_model_state)
                 if self.verbose:
                     print(
-                        f"  ★ Early Stopping 발동! Step {self.best_step}의 가중치로 복원 "
-                        f"(val_loss={self.best_loss:.4f})"
+                        f"  ★ Early Stopping 발동! Best step {self.best_step} "
+                        f"(val_loss={self.best_loss:.4f}) — best checkpoint 파일에서 복원하세요."
                     )
                 return True
         else:
             self.best_loss = val_loss
-            self.best_model_state = copy.deepcopy(model.state_dict())
             self.best_step = step
             self.counter = 0
             if self.verbose:
-                print(f"  [EarlyStopping] Step {step}: 개선! 저장 (val_loss={val_loss:.4f})")
+                print(f"  [EarlyStopping] Step {step}: 개선! 기록 (val_loss={val_loss:.4f})")
 
         return False
 
@@ -153,10 +155,26 @@ def train(args):
         if accelerator.is_main_process:
             print("✅ Gradient checkpointing 활성화 (활성화 메모리 ~4배 절감)")
 
+    # FP32 연산이 필요한 구간에서 A100의 Tensor Core(TF32)를 적극 활용하도록 허용합니다. (속도 향상)
+    torch.set_float32_matmul_precision('high')
+
+    # [H100 최적화] Compute Capability 9.0 이상일 경우 FP8 연산 자동 변환 (A100은 무시됨)
+    if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 9:
+        try:
+            from torchao.float8 import convert_to_float8_training
+            convert_to_float8_training(model)
+            if accelerator.is_main_process:
+                print("⚡ H100 감지: FP8 Mixed Precision(torchao)이 자동 활성화되었습니다. (학습 속도 2.5배↑)")
+        except ImportError:
+            if accelerator.is_main_process:
+                print("⚠️ H100 GPU이지만 `torchao` 패키지가 없어 FP8 가속을 적용할 수 없습니다. (pip install torchao 권장)")
+
     # torch.compile — A100 BF16에서 +25~40% 처리량 (첫 step에 1~2분 컴파일)
     if args.compile:
         if accelerator.is_main_process:
             print("✅ torch.compile 활성화 (첫 step에 1~2분 컴파일 소요)")
+        # max-autotune 모드: 컴파일에 10~20분이 걸리지만, 런타임 속도를 5~10% 더 끌어올립니다.
+        # model = torch.compile(model, mode="max-autotune")
         model = torch.compile(model)
 
     if accelerator.is_main_process:
@@ -181,17 +199,44 @@ def train(args):
     if not os.path.exists(train_npy):
         raise FileNotFoundError(f"Training dataset not found at {train_npy}. Run prepare_data.py first.")
 
+    # Google Drive FUSE → 로컬 SSD 복사 (mmap 랜덤 I/O 지연 제거)
+    # /content/ 존재 시(Colab 환경) 로컬 SSD 사용, 아니면 원본 경로 유지
+    local_cache = "/content"
+    if os.path.isdir(local_cache) and train_npy.startswith("/content/drive"):
+        local_train = os.path.join(local_cache, "_cached_train.npy")
+        if not os.path.exists(local_train):
+            if accelerator.is_main_process:
+                print(f"📋 학습 데이터를 로컬 SSD로 복사 중: {train_npy} → {local_train}")
+            shutil.copy2(train_npy, local_train)
+            if accelerator.is_main_process:
+                print(f"✅ 복사 완료 ({os.path.getsize(local_train) / 1e9:.1f}GB)")
+        train_npy = local_train
+
     train_dataset = NumpyDataset(train_npy)
     batch_size = 2 if args.smoke_test else args.batch_size
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+    use_workers = 0 if args.smoke_test else 4
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size, shuffle=True, drop_last=True,
+        num_workers=use_workers, pin_memory=torch.cuda.is_available(),
+        persistent_workers=(use_workers > 0),
+    )
 
     # 3. 검증 데이터 ——————————————————————————————————————————————
     val_npy = os.path.join(args.data_dir, "val.npy")
     val_loader = None
     if os.path.exists(val_npy):
+        # 검증 데이터도 로컬 캐시
+        if os.path.isdir(local_cache) and val_npy.startswith("/content/drive"):
+            local_val = os.path.join(local_cache, "_cached_val.npy")
+            if not os.path.exists(local_val):
+                shutil.copy2(val_npy, local_val)
+            val_npy = local_val
+
         val_dataset = NumpyDataset(val_npy)
         val_loader = DataLoader(
-            val_dataset, batch_size=batch_size * 2, shuffle=False, drop_last=False
+            val_dataset, batch_size=batch_size * 2, shuffle=False, drop_last=False,
+            num_workers=use_workers, pin_memory=torch.cuda.is_available(),
+            persistent_workers=(use_workers > 0),
         )
         print(f"Loaded validation set: {len(val_dataset):,} blocks from {val_npy}")
     else:
@@ -416,16 +461,13 @@ def train(args):
 
                     log_metrics(log_dir, args.run_id, step, {"val_loss": avg_val_loss, "val_ppl": avg_val_ppl})
 
-                should_stop = early_stopping(
-                    avg_val_loss,
-                    accelerator.unwrap_model(model) if hasattr(model, "module") else model,
-                    step,
-                )
+                should_stop = early_stopping(avg_val_loss, step)
                 if should_stop:
                     if best_checkpoint_saved and best_checkpoint_path:
-                        import shutil
                         final_path = os.path.join(ckpt_dir, f"dense_{args.run_id}_final_early_stop.pt")
                         shutil.copy2(best_checkpoint_path, final_path)
+                        if accelerator.is_main_process:
+                            print(f"  📦 Best checkpoint → {final_path} 복사 완료")
                     accelerator.wait_for_everyone()
                     break
 
@@ -437,9 +479,9 @@ def train(args):
         if val_loader is not None and not early_stopping.early_stop and best_checkpoint_saved:
             print(
                 f"Early Stopping 미발동. Best checkpoint "
-                f"(step {early_stopping.best_step}, val_loss={early_stopping.best_loss:.4f})로 복원합니다."
+                f"(step {early_stopping.best_step}, val_loss={early_stopping.best_loss:.4f})이 "
+                f"{best_checkpoint_path} 에 저장되어 있습니다."
             )
-            model.load_state_dict(early_stopping.best_model_state)
 
         final_metrics = {
             "final_step": step,

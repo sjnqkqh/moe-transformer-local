@@ -57,9 +57,12 @@ class DenseTransformer(nn.Module):
         # [구조 4] 최종 어휘 사전 매핑 분류기 (LM Head, Untied 구조)
         self.lm_head = nn.Linear(self.d_model, self.vocab_size, bias=False)
 
-        # [구조 5] RoPE 회전 주파수 극좌표 복소 버퍼 생성 및 등록
-        freqs_cis = precompute_freqs_cis(self.d_model // self.n_heads, self.max_seq_len)
-        self.register_buffer("freqs_cis", freqs_cis, persistent=False)
+        # [구조 5] RoPE cos/sin 주파수 버퍼 등록 (실수 텐서, torch.compile 완전 호환)
+        freqs_cos, freqs_sin = precompute_freqs_cis(
+            self.d_model // self.n_heads, self.max_seq_len
+        )
+        self.register_buffer("freqs_cos", freqs_cos, persistent=False)
+        self.register_buffer("freqs_sin", freqs_sin, persistent=False)
 
         # [구조 6] gradient checkpointing 플래그 (메모리 절감, 학습 중 활성화)
         self.gradient_checkpointing = False
@@ -90,15 +93,16 @@ class DenseTransformer(nn.Module):
         # 1단계: 토큰들을 벡터 차원으로 임베딩 변환
         x = self.token_embeddings(input_ids)
 
-        # 2단계: 현재 시퀀스 길이 T에 맞춰 RoPE 주파수 버퍼 잘라오기
-        freqs_cis = self.freqs_cis[:T]
+        # 2단계: 현재 시퀀스 길이 T에 맞춰 RoPE cos/sin 버퍼 잘라오기
+        freqs_cos = self.freqs_cos[:T]
+        freqs_sin = self.freqs_sin[:T]
 
         # 3단계: 모든 레이어 순전파 실행 (학습 중 + checkpointing 활성 시 메모리 절감)
         for layer in self.layers:
             if self.gradient_checkpointing and self.training:
-                x = checkpoint(layer, x, freqs_cis, use_reentrant=False)
+                x = checkpoint(layer, x, freqs_cos, freqs_sin, use_reentrant=False)
             else:
-                x = layer(x, freqs_cis)
+                x = layer(x, freqs_cos, freqs_sin)
 
         # 4단계: 최종 정규화 및 분류기를 통한 로짓(Logits) 변환
         x = self.norm(x)
@@ -121,3 +125,4 @@ class DenseTransformer(nn.Module):
             loss = main_loss
 
         return logits, loss, main_loss
+

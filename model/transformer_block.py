@@ -38,11 +38,12 @@ class TransformerBlock(nn.Module):
         self.ffn_norm = RMSNorm(d_model, eps=eps)
         self.ffn = DenseFFN(d_model, d_ff, dropout=dropout)
 
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor) -> torch.Tensor:
         """
         Args:
             x (torch.Tensor): 입력 텐서. 형태: (B, T, d_model)
-            freqs_cis (torch.Tensor): 복소수 RoPE 주파수 버퍼.
+            freqs_cos (torch.Tensor): RoPE cos(θ) 버퍼. 형태: (T, head_dim // 2)
+            freqs_sin (torch.Tensor): RoPE sin(θ) 버퍼. 형태: (T, head_dim // 2)
 
         Returns:
             torch.Tensor: 레이어 출력을 더해준 잔차 결과 텐서. 형태: (B, T, d_model)
@@ -50,7 +51,7 @@ class TransformerBlock(nn.Module):
         # [과정 1] Pre-RMSNorm Attention 적용 및 잔차 연결 (Residual Connection)
         # 입력을 RMSNorm 정규화한 뒤 어텐션을 통과시키고, 가중치 업데이트가 누락되지 않도록 원래 입력 x를 더해 줍니다.
         # x = x + Attention(RMSNorm(x))
-        x = x + self.attention(self.attention_norm(x), freqs_cis)
+        x = x + self.attention(self.attention_norm(x), freqs_cos, freqs_sin)
 
         # [과정 2] Pre-RMSNorm Dense FFN 적용 및 잔차 연결
         # x = x + DenseFFN(RMSNorm(x))
