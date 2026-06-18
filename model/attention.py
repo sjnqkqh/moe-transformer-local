@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from model.rope import apply_rotary_emb
 
 
@@ -29,7 +30,9 @@ class MultiHeadAttention(nn.Module):
         self.resid_dropout = nn.Dropout(p=dropout)
         # causal mask 버퍼 불필요 — SDPA의 is_causal=True가 대신 처리
 
-    def forward(self, x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
+    ) -> torch.Tensor:
         """
         Args:
             x         : (B, T, d_model)
@@ -66,7 +69,9 @@ class MultiHeadAttention(nn.Module):
         #   A100 BF16/FP16  : FlashAttention-2 커널 자동 선택
         dropout_p = self.dropout_p if self.training else 0.0
         output = F.scaled_dot_product_attention(
-            xq, xk, xv,
+            xq,
+            xk,
+            xv,
             attn_mask=None,
             dropout_p=dropout_p,
             is_causal=True,

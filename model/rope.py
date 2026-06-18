@@ -3,7 +3,9 @@ from typing import Tuple
 import torch
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> Tuple[torch.Tensor, torch.Tensor]:
+def precompute_freqs_cis(
+    dim: int, end: int, theta: float = 10000.0
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     RoPE(Rotary Position Embedding)에 사용되는 회전 주파수의 cos/sin 값을 사전 계산합니다.
 
@@ -77,4 +79,3 @@ def apply_rotary_emb(
     # [과정 4] 짝수/홀수 결과를 인터리브하여 원래 head_dim 차원으로 합치기
     #   stack → (B, T, H, head_dim // 2, 2) → flatten → (B, T, H, head_dim)
     return torch.stack([out1, out2], dim=-1).flatten(-2)
-

@@ -15,23 +15,23 @@ prepare_chat_data.py v8.2 — 세션 재시작 안전 / chunk 분리 / 재개 �
   - 조립 중 죽음 → chunk는 남아 있음, 다음 실행에서 조립 단계만 재시도
 """
 
-import os
-import glob
-import json
-import shutil
-import hashlib
-import tempfile
 import argparse
+import hashlib
+import json
+import os
+import shutil
+import tempfile
+
 import numpy as np
 from datasets import load_dataset
 from transformers import PreTrainedTokenizerFast
-
 
 STREAMING_KEYWORDS = ("fineweb", "culturax", "mc4", "oscar", "cc100", "/c4")
 DEFAULT_CHUNK_TOKENS = 500_000_000  # 500M tokens/chunk ≈ 2GB
 
 
 # ── 경로 / 디스크 / 진행상태 ────────────────────────────────────────────────
+
 
 def should_stream(name: str) -> bool:
     n = name.lower()
@@ -74,7 +74,9 @@ def check_disk_space(path: str, required_bytes: int) -> None:
             f"   필요: {required_bytes/1e9:.1f} GB / 가용: {stat.free/1e9:.1f} GB\n"
             f"   여유 공간 확보 후 재시도."
         )
-    print(f"💾 디스크: {path} ({stat.free/1e9:.1f} GB 가용, {required_bytes/1e9:.1f} GB 필요)")
+    print(
+        f"💾 디스크: {path} ({stat.free/1e9:.1f} GB 가용, {required_bytes/1e9:.1f} GB 필요)"
+    )
 
 
 def config_hash(*items) -> str:
@@ -129,13 +131,16 @@ def cleanup_assembly(assembly_dir: str) -> None:
 
 # ── 데이터셋 row → 학습 텍스트 ──────────────────────────────────────────────
 
+
 def parse_aihub_dialogue(json_path):
     try:
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except Exception:
         return []
-    sessions = data.get("sessionInfo") or ([{"dialog": data.get("dialogue", [])}] if data.get("dialogue") else [])
+    sessions = data.get("sessionInfo") or (
+        [{"dialog": data.get("dialogue", [])}] if data.get("dialogue") else []
+    )
     out = []
     for s in sessions:
         turns = []
@@ -196,23 +201,41 @@ def extract_text_from_row(row) -> str:
 
 # ── 한 데이터셋 → chunk 파일들 (Drive 영구 저장) ────────────────────────────
 
+
 def process_dataset_into_chunks(
-    hf_name, hf_config, tokenizer, chunks_dir, progress,
-    target_tokens, chunk_max_tokens, max_samples_per_dataset, batch_size
+    hf_name,
+    hf_config,
+    tokenizer,
+    chunks_dir,
+    progress,
+    target_tokens,
+    chunk_max_tokens,
+    max_samples_per_dataset,
+    batch_size,
 ) -> int:
     dataset_id = hf_name + (f":{hf_config}" if hf_config else "")
-    ds_state = progress["datasets"].setdefault(dataset_id, {
-        "samples_consumed": 0, "tokens_emitted": 0, "complete": False,
-    })
+    ds_state = progress["datasets"].setdefault(
+        dataset_id,
+        {
+            "samples_consumed": 0,
+            "tokens_emitted": 0,
+            "complete": False,
+        },
+    )
 
     if ds_state["complete"]:
-        print(f"\n⏭  {dataset_id}: 이미 완료 ({ds_state['tokens_emitted']:,} tokens) — 스킵")
+        print(
+            f"\n⏭  {dataset_id}: 이미 완료 ({ds_state['tokens_emitted']:,} tokens) — 스킵"
+        )
         return 0
 
     streaming = should_stream(hf_name)
     skip_n = ds_state["samples_consumed"]
-    print(f"\n📥 {dataset_id}" + (" [STREAMING]" if streaming else "") +
-          (f" | resume: skip {skip_n:,} rows" if skip_n else ""))
+    print(
+        f"\n📥 {dataset_id}"
+        + (" [STREAMING]" if streaming else "")
+        + (f" | resume: skip {skip_n:,} rows" if skip_n else "")
+    )
 
     try:
         dataset = load_dataset(hf_name, hf_config, split="train", streaming=streaming)
@@ -243,8 +266,10 @@ def process_dataset_into_chunks(
         if not buffer_texts:
             return
         enc = tokenizer(
-            buffer_texts, add_special_tokens=False,
-            truncation=False, return_attention_mask=False,
+            buffer_texts,
+            add_special_tokens=False,
+            truncation=False,
+            return_attention_mask=False,
         )["input_ids"]
         for ids in enc:
             if ids:
@@ -263,18 +288,22 @@ def process_dataset_into_chunks(
             pass
         chunk_fout.close()
 
-        progress["chunks"].append({
-            "file": os.path.basename(chunk_path),
-            "tokens": chunk_tokens,
-            "dataset": dataset_id,
-            "chunk_idx": chunk_idx,
-        })
+        progress["chunks"].append(
+            {
+                "file": os.path.basename(chunk_path),
+                "tokens": chunk_tokens,
+                "dataset": dataset_id,
+                "chunk_idx": chunk_idx,
+            }
+        )
         ds_state["samples_consumed"] = skip_n + samples_added
         ds_state["tokens_emitted"] += chunk_tokens
         progress["total_tokens"] += chunk_tokens
         save_progress(chunks_dir, progress)
-        print(f"   💾 chunk #{chunk_idx} → Drive 저장: {chunk_tokens:,} tokens "
-              f"| total={progress['total_tokens']:,}")
+        print(
+            f"   💾 chunk #{chunk_idx} → Drive 저장: {chunk_tokens:,} tokens "
+            f"| total={progress['total_tokens']:,}"
+        )
 
         chunk_idx = len(progress["chunks"]) + 1
         chunk_path = os.path.join(chunks_dir, f"_chunk_{chunk_idx:04d}.bin")
@@ -283,9 +312,15 @@ def process_dataset_into_chunks(
 
     try:
         for row in dataset:
-            if target_tokens and progress["total_tokens"] + tokens_added >= target_tokens:
+            if (
+                target_tokens
+                and progress["total_tokens"] + tokens_added >= target_tokens
+            ):
                 break
-            if max_samples_per_dataset and (skip_n + samples_added) >= max_samples_per_dataset:
+            if (
+                max_samples_per_dataset
+                and (skip_n + samples_added) >= max_samples_per_dataset
+            ):
                 break
 
             text = extract_text_from_row(row)
@@ -301,8 +336,10 @@ def process_dataset_into_chunks(
                 if samples_added % 10000 == 0:
                     total_so_far = progress["total_tokens"] + tokens_added
                     pct = (total_so_far * 100 / target_tokens) if target_tokens else 0
-                    print(f"   {samples_added:,} samples | +{tokens_added:,} tok "
-                          f"| total {total_so_far:,} ({pct:.1f}%)")
+                    print(
+                        f"   {samples_added:,} samples | +{tokens_added:,} tok "
+                        f"| total {total_so_far:,} ({pct:.1f}%)"
+                    )
         flush_buffer()
     except Exception as e:
         print(f"   ⚠️ 스트리밍 중 오류 (기존 chunk 보존됨): {e}")
@@ -324,7 +361,10 @@ def process_dataset_into_chunks(
 
 # ── 최종 .npy 조립 (chunks=Drive → npy=로컬→Drive) ───────────────────────
 
-def assemble_chunks_into_npy(chunks_dir, assembly_scratch, output_dir, block_size, progress):
+
+def assemble_chunks_into_npy(
+    chunks_dir, assembly_scratch, output_dir, block_size, progress
+):
     chunks = progress["chunks"]
     if not chunks:
         raise ValueError("저장된 chunk 없음.")
@@ -338,8 +378,10 @@ def assemble_chunks_into_npy(chunks_dir, assembly_scratch, output_dir, block_siz
     train_blocks = split_idx
     val_blocks = total_blocks - split_idx
 
-    print(f"\n📐 Assembling {len(chunks)} chunks → "
-          f"train {train_blocks:,} / val {val_blocks:,} blocks (block_size={block_size})")
+    print(
+        f"\n📐 Assembling {len(chunks)} chunks → "
+        f"train {train_blocks:,} / val {val_blocks:,} blocks (block_size={block_size})"
+    )
     print(f"   chunks   : {chunks_dir}")
     print(f"   assembly : {assembly_scratch} (로컬 SSD)")
 
@@ -366,20 +408,27 @@ def assemble_chunks_into_npy(chunks_dir, assembly_scratch, output_dir, block_siz
             chunk_data = np.concatenate([leftover, chunk_data])
         n_full = chunk_data.size // block_size
         n_used = n_full * block_size
-        blocks = (chunk_data[:n_used].reshape(n_full, block_size)
-                  if n_full > 0 else np.zeros((0, block_size), dtype=np.int32))
-        leftover = chunk_data[n_used:].copy() if n_used < chunk_data.size else np.zeros(0, dtype=np.int32)
+        blocks = (
+            chunk_data[:n_used].reshape(n_full, block_size)
+            if n_full > 0
+            else np.zeros((0, block_size), dtype=np.int32)
+        )
+        leftover = (
+            chunk_data[n_used:].copy()
+            if n_used < chunk_data.size
+            else np.zeros(0, dtype=np.int32)
+        )
 
         if written_train < train_blocks:
             n_to = min(train_blocks - written_train, n_full)
-            train_mm[written_train:written_train + n_to] = blocks[:n_to]
+            train_mm[written_train : written_train + n_to] = blocks[:n_to]
             written_train += n_to
             blocks = blocks[n_to:]
             n_full -= n_to
 
         if n_full > 0 and written_val < val_blocks:
             n_to = min(val_blocks - written_val, n_full)
-            val_mm[written_val:written_val + n_to] = blocks[:n_to]
+            val_mm[written_val : written_val + n_to] = blocks[:n_to]
             written_val += n_to
 
         if written_train >= train_blocks and written_val >= val_blocks:
@@ -397,20 +446,30 @@ def assemble_chunks_into_npy(chunks_dir, assembly_scratch, output_dir, block_siz
     print(f"   val.npy   ({os.path.getsize(val_scratch) / 1e9:.2f} GB)")
     shutil.copy2(val_scratch, val_path)
 
-    print(f"\n✅ train.npy: {train_blocks:,} blocks ({train_blocks * block_size:,} tokens)")
+    print(
+        f"\n✅ train.npy: {train_blocks:,} blocks ({train_blocks * block_size:,} tokens)"
+    )
     print(f"✅ val.npy  : {val_blocks:,} blocks ({val_blocks * block_size:,} tokens)")
     return train_path, val_path
 
 
 # ── 메인 ──────────────────────────────────────────────────────────────────
 
+
 def prepare_chat_data(
-    data_dir, tokenizer_dir, output_dir,
-    block_size=2048, smoke_test=False,
-    hf_datasets=None, target_tokens=None,
-    max_samples_per_dataset=None, batch_size=1000,
-    chunks_dir=None, assembly_scratch=None,
-    chunk_size_tokens=DEFAULT_CHUNK_TOKENS, cleanup=True,
+    data_dir,
+    tokenizer_dir,
+    output_dir,
+    block_size=2048,
+    smoke_test=False,
+    hf_datasets=None,
+    target_tokens=None,
+    max_samples_per_dataset=None,
+    batch_size=1000,
+    chunks_dir=None,
+    assembly_scratch=None,
+    chunk_size_tokens=DEFAULT_CHUNK_TOKENS,
+    cleanup=True,
 ):
     if hf_datasets is None:
         hf_datasets = []
@@ -422,7 +481,9 @@ def prepare_chat_data(
 
     # 디스크 사전 확인 (조립 단계에서 train.npy + val.npy 동시 열기 → 로컬)
     if target_tokens and not smoke_test:
-        assembly_need = int(target_tokens * 4 * 1.05)  # train+val ≈ target_tokens × 4 bytes
+        assembly_need = int(
+            target_tokens * 4 * 1.05
+        )  # train+val ≈ target_tokens × 4 bytes
         check_disk_space(assembly, assembly_need)
         # Drive는 chunks + 최종 .npy 각각 한 벌씩 필요
         drive_need = int(target_tokens * 4 * 2.1)
@@ -430,7 +491,11 @@ def prepare_chat_data(
 
     print("=" * 60)
     print("📦 Chatbot Dataset Preparation (v8.2: persistent chunks)")
-    print(f"   target_tokens       : {target_tokens:,}" if target_tokens else "   target_tokens       : unlimited")
+    print(
+        f"   target_tokens       : {target_tokens:,}"
+        if target_tokens
+        else "   target_tokens       : unlimited"
+    )
     print(f"   chunk_size_tokens   : {chunk_size_tokens:,}")
     print(f"   chunks_dir (Drive)  : {chunks_dir}")
     print(f"   assembly (로컬 SSD) : {assembly}")
@@ -455,8 +520,10 @@ def prepare_chat_data(
         }
         save_progress(chunks_dir, progress)
     else:
-        print(f"♻️ 진행 상태 복원: {len(progress['chunks'])} chunks, "
-              f"{progress['total_tokens']:,} tokens 완료")
+        print(
+            f"♻️ 진행 상태 복원: {len(progress['chunks'])} chunks, "
+            f"{progress['total_tokens']:,} tokens 완료"
+        )
 
     if smoke_test:
         chunk_path = os.path.join(chunks_dir, "_chunk_0001.bin")
@@ -469,8 +536,12 @@ def prepare_chat_data(
             n = 0
             for ids in enc:
                 if ids:
-                    arr = np.asarray(ids, dtype=np.int32); arr.tofile(f); n += len(ids)
-        progress["chunks"].append({"file": "_chunk_0001.bin", "tokens": n, "dataset": "smoke", "chunk_idx": 1})
+                    arr = np.asarray(ids, dtype=np.int32)
+                    arr.tofile(f)
+                    n += len(ids)
+        progress["chunks"].append(
+            {"file": "_chunk_0001.bin", "tokens": n, "dataset": "smoke", "chunk_idx": 1}
+        )
         progress["total_tokens"] = n
         save_progress(chunks_dir, progress)
     else:
@@ -481,18 +552,29 @@ def prepare_chat_data(
             hf_name, _, hf_config = hf_entry.partition(":")
             hf_config = hf_config or None
             process_dataset_into_chunks(
-                hf_name, hf_config, tokenizer, chunks_dir, progress,
-                target_tokens, chunk_size_tokens, max_samples_per_dataset, batch_size,
+                hf_name,
+                hf_config,
+                tokenizer,
+                chunks_dir,
+                progress,
+                target_tokens,
+                chunk_size_tokens,
+                max_samples_per_dataset,
+                batch_size,
             )
 
-    print(f"\n📊 총 토큰: {progress['total_tokens']:,} ({len(progress['chunks'])} chunks)")
+    print(
+        f"\n📊 총 토큰: {progress['total_tokens']:,} ({len(progress['chunks'])} chunks)"
+    )
     if progress["total_tokens"] == 0:
         raise ValueError("No tokens collected.")
 
     print("\n📈 데이터셋별:")
     for ds_id, st in progress["datasets"].items():
         flag = "✅" if st["complete"] else "..."
-        print(f"   {flag} {ds_id}: {st['tokens_emitted']:,} tokens ({st['samples_consumed']:,} samples)")
+        print(
+            f"   {flag} {ds_id}: {st['tokens_emitted']:,} tokens ({st['samples_consumed']:,} samples)"
+        )
 
     assemble_chunks_into_npy(chunks_dir, assembly, output_dir, block_size, progress)
 
@@ -516,8 +598,12 @@ def prepare_chat_data(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str, default=None)
-    parser.add_argument("--hf_datasets", nargs="*", default=[],
-                        help="'name' 또는 'name:config'. 예: HuggingFaceFW/fineweb-2:kor_Hang")
+    parser.add_argument(
+        "--hf_datasets",
+        nargs="*",
+        default=[],
+        help="'name' 또는 'name:config'. 예: HuggingFaceFW/fineweb-2:kor_Hang",
+    )
     parser.add_argument("--tokenizer_dir", type=str, default="tokenizer/korean_output")
     parser.add_argument("--output_dir", type=str, default="train/chat_data")
     parser.add_argument("--block_size", type=int, default=2048)
@@ -525,14 +611,29 @@ if __name__ == "__main__":
     parser.add_argument("--target_tokens", type=int, default=None)
     parser.add_argument("--max_samples_per_dataset", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=1000)
-    parser.add_argument("--chunk_size_tokens", type=int, default=DEFAULT_CHUNK_TOKENS,
-                        help=f"chunk 1개당 최대 토큰 (기본 {DEFAULT_CHUNK_TOKENS:,} ≈ 2GB)")
-    parser.add_argument("--chunks_dir", type=str, default=None,
-                        help="chunk 영구 저장 위치. 미지정 시 {output_dir}/_chunks_persistent/")
-    parser.add_argument("--assembly_scratch", type=str, default=None,
-                        help="조립용 로컬 SSD. 미지정 시 Colab은 /content/_prepare_chat_assembly")
-    parser.add_argument("--no_cleanup", action="store_true",
-                        help="작업 완료 후 chunk 보존 (재시도/디버깅용)")
+    parser.add_argument(
+        "--chunk_size_tokens",
+        type=int,
+        default=DEFAULT_CHUNK_TOKENS,
+        help=f"chunk 1개당 최대 토큰 (기본 {DEFAULT_CHUNK_TOKENS:,} ≈ 2GB)",
+    )
+    parser.add_argument(
+        "--chunks_dir",
+        type=str,
+        default=None,
+        help="chunk 영구 저장 위치. 미지정 시 {output_dir}/_chunks_persistent/",
+    )
+    parser.add_argument(
+        "--assembly_scratch",
+        type=str,
+        default=None,
+        help="조립용 로컬 SSD. 미지정 시 Colab은 /content/_prepare_chat_assembly",
+    )
+    parser.add_argument(
+        "--no_cleanup",
+        action="store_true",
+        help="작업 완료 후 chunk 보존 (재시도/디버깅용)",
+    )
     args = parser.parse_args()
 
     prepare_chat_data(

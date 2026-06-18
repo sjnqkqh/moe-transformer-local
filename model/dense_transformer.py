@@ -2,10 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
+
+from model.config import DenseTransformerConfig
 from model.normalization import RMSNorm
 from model.rope import precompute_freqs_cis
 from model.transformer_block import TransformerBlock
-from model.config import DenseTransformerConfig
 
 
 class DenseTransformer(nn.Module):
@@ -125,4 +126,3 @@ class DenseTransformer(nn.Module):
             loss = main_loss
 
         return logits, loss, main_loss
-

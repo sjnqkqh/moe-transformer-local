@@ -1,6 +1,6 @@
-import os
-import sys
 import argparse
+import os
+
 from datasets import load_dataset
 from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
 from transformers import PreTrainedTokenizerFast
@@ -53,9 +53,13 @@ def train_tokenizer(
             iterator = texts
         else:
             if not data_dir and not hf_datasets:
-                raise ValueError("Korean 모드: --data_dir 또는 --hf_datasets 중 최소 하나 필요.")
+                raise ValueError(
+                    "Korean 모드: --data_dir 또는 --hf_datasets 중 최소 하나 필요."
+                )
             if data_dir:
-                print(f"Loading Korean dialog texts from AI-Hub JSONs under {data_dir}...")
+                print(
+                    f"Loading Korean dialog texts from AI-Hub JSONs under {data_dir}..."
+                )
             import glob
             import json
 
@@ -98,7 +102,9 @@ def train_tokenizer(
                         tag = f"{hf_name}" + (f":{hf_config}" if hf_config else "")
                         try:
                             print(f"  Loading HF sample: {tag} ({hf_samples} rows)...")
-                            ds = load_dataset(hf_name, hf_config, split="train", streaming=True)
+                            ds = load_dataset(
+                                hf_name, hf_config, split="train", streaming=True
+                            )
                             sampled = 0
                             for row in ds:
                                 text = ""

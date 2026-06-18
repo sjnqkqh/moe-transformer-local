@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
-from model.normalization import RMSNorm
+
 from model.attention import MultiHeadAttention
 from model.ffn import DenseFFN
+from model.normalization import RMSNorm
 
 
 class TransformerBlock(nn.Module):
@@ -38,7 +39,9 @@ class TransformerBlock(nn.Module):
         self.ffn_norm = RMSNorm(d_model, eps=eps)
         self.ffn = DenseFFN(d_model, d_ff, dropout=dropout)
 
-    def forward(self, x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
+    ) -> torch.Tensor:
         """
         Args:
             x (torch.Tensor): 입력 텐서. 형태: (B, T, d_model)

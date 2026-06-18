@@ -12,10 +12,11 @@ verify_data_pipeline.py — 데이터셋 sanity test
 출력: {output_dir}/verify_train.npy + verify_summary.json
 """
 
+import argparse
+import json
 import os
 import sys
-import json
-import argparse
+
 import numpy as np
 from datasets import load_dataset
 from transformers import PreTrainedTokenizerFast
@@ -66,7 +67,8 @@ def verify_one_dataset(hf_name, hf_config, tokenizer, n_samples, preview_chars=2
             if summary["first_sample"] is None:
                 summary["first_sample"] = {
                     "raw_keys": list(row.keys()) if hasattr(row, "keys") else None,
-                    "extracted_text_preview": text[:preview_chars] + ("..." if len(text) > preview_chars else ""),
+                    "extracted_text_preview": text[:preview_chars]
+                    + ("..." if len(text) > preview_chars else ""),
                     "extracted_text_length": len(text),
                 }
             raw_samples.append(text)
@@ -79,10 +81,14 @@ def verify_one_dataset(hf_name, hf_config, tokenizer, n_samples, preview_chars=2
         return summary, []
 
     # 배치 토크나이즈
-    enc = tokenizer(texts, add_special_tokens=False, truncation=False, return_attention_mask=False)["input_ids"]
+    enc = tokenizer(
+        texts, add_special_tokens=False, truncation=False, return_attention_mask=False
+    )["input_ids"]
     token_lengths = [len(ids) for ids in enc if ids]
     summary["total_tokens"] = sum(token_lengths)
-    summary["avg_tokens_per_row"] = summary["total_tokens"] / len(token_lengths) if token_lengths else 0
+    summary["avg_tokens_per_row"] = (
+        summary["total_tokens"] / len(token_lengths) if token_lengths else 0
+    )
 
     # 첫 sample의 토큰 정보 추가
     if enc and enc[0]:
@@ -91,11 +97,15 @@ def verify_one_dataset(hf_name, hf_config, tokenizer, n_samples, preview_chars=2
         summary["first_sample"]["first_50_token_ids"] = first_ids
         summary["first_sample"]["first_50_decoded"] = first_decoded
 
-    print(f"   ✅ rows_seen={summary['rows_seen']}, "
-          f"rows_with_text={summary['rows_with_text']} "
-          f"({summary['rows_with_text']/summary['rows_seen']*100:.0f}%)")
-    print(f"   📊 total_tokens={summary['total_tokens']:,}, "
-          f"avg={summary['avg_tokens_per_row']:.0f} tok/row")
+    print(
+        f"   ✅ rows_seen={summary['rows_seen']}, "
+        f"rows_with_text={summary['rows_with_text']} "
+        f"({summary['rows_with_text']/summary['rows_seen']*100:.0f}%)"
+    )
+    print(
+        f"   📊 total_tokens={summary['total_tokens']:,}, "
+        f"avg={summary['avg_tokens_per_row']:.0f} tok/row"
+    )
     if summary["first_sample"]:
         fs = summary["first_sample"]
         print(f"   📝 첫 sample ({fs['extracted_text_length']} chars):")
@@ -132,7 +142,9 @@ def verify(args):
         hf_name, _, hf_config = entry.partition(":")
         hf_config = hf_config or None
         summary, tokens = verify_one_dataset(
-            hf_name, hf_config, tokenizer,
+            hf_name,
+            hf_config,
+            tokenizer,
             n_samples=args.n_samples,
             preview_chars=args.preview_chars,
         )
@@ -142,12 +154,21 @@ def verify(args):
     # 요약 저장
     summary_path = os.path.join(args.output_dir, "verify_summary.json")
     with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump({
-            "total_datasets": len(all_summaries),
-            "successful_datasets": sum(1 for s in all_summaries if s["load_success"] and s["total_tokens"] > 0),
-            "total_tokens_collected": sum(s["total_tokens"] for s in all_summaries),
-            "datasets": all_summaries,
-        }, f, indent=2, ensure_ascii=False)
+        json.dump(
+            {
+                "total_datasets": len(all_summaries),
+                "successful_datasets": sum(
+                    1
+                    for s in all_summaries
+                    if s["load_success"] and s["total_tokens"] > 0
+                ),
+                "total_tokens_collected": sum(s["total_tokens"] for s in all_summaries),
+                "datasets": all_summaries,
+            },
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
     print(f"\n📄 요약 저장: {summary_path}")
 
     # 토큰 .npy 저장 (block_size로 reshape)
@@ -158,16 +179,24 @@ def verify(args):
             blocks = arr[:total_len].reshape(-1, args.block_size)
             npy_path = os.path.join(args.output_dir, "verify_train.npy")
             np.save(npy_path, blocks)
-            print(f"💾 verify_train.npy 저장: {len(blocks):,} blocks × {args.block_size} tokens "
-                  f"({total_len:,} tokens, {os.path.getsize(npy_path)/1e6:.1f} MB)")
+            print(
+                f"💾 verify_train.npy 저장: {len(blocks):,} blocks × {args.block_size} tokens "
+                f"({total_len:,} tokens, {os.path.getsize(npy_path)/1e6:.1f} MB)"
+            )
         else:
-            print(f"⚠️ 토큰 수({len(arr)}) < block_size({args.block_size}) → .npy 저장 스킵")
+            print(
+                f"⚠️ 토큰 수({len(arr)}) < block_size({args.block_size}) → .npy 저장 스킵"
+            )
 
     # 최종 판정
     print("\n" + "=" * 60)
     print("📊 최종 판정")
     print("=" * 60)
-    failed = [s["dataset_id"] for s in all_summaries if not s["load_success"] or s["total_tokens"] == 0]
+    failed = [
+        s["dataset_id"]
+        for s in all_summaries
+        if not s["load_success"] or s["total_tokens"] == 0
+    ]
     if failed:
         print(f"❌ 실패 데이터셋 ({len(failed)}):")
         for d in failed:
@@ -183,16 +212,23 @@ def verify(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--hf_datasets", nargs="+", required=True,
-                        help="검증할 HF 데이터셋. 'name' 또는 'name:config' 형식.")
+    parser.add_argument(
+        "--hf_datasets",
+        nargs="+",
+        required=True,
+        help="검증할 HF 데이터셋. 'name' 또는 'name:config' 형식.",
+    )
     parser.add_argument("--tokenizer_dir", type=str, required=True)
     parser.add_argument("--output_dir", type=str, default="train/verify_data")
-    parser.add_argument("--n_samples", type=int, default=100,
-                        help="데이터셋당 추출 row 수 (기본 100)")
+    parser.add_argument(
+        "--n_samples", type=int, default=100, help="데이터셋당 추출 row 수 (기본 100)"
+    )
     parser.add_argument("--block_size", type=int, default=2048)
-    parser.add_argument("--preview_chars", type=int, default=200,
-                        help="텍스트 미리보기 길이")
-    parser.add_argument("--save_npy", action="store_true",
-                        help="verify_train.npy 저장 여부")
+    parser.add_argument(
+        "--preview_chars", type=int, default=200, help="텍스트 미리보기 길이"
+    )
+    parser.add_argument(
+        "--save_npy", action="store_true", help="verify_train.npy 저장 여부"
+    )
     args = parser.parse_args()
     sys.exit(verify(args))

@@ -39,7 +39,7 @@ def make_kst_run_dir(base_dir: str, run_id: str) -> str:
 
 class EarlyStopping:
     """조기 중단 — 검증 손실이 개선되지 않으면 학습 중단.
-    
+
     best checkpoint는 디스크 파일로 관리 (deepcopy 제거).
     1.3B 모델에서 state_dict deepcopy는 ~2.6GB 메모리 복제 + 수초 지연을 유발하므로,
     별도 best checkpoint 파일 저장 로직과 연동합니다.
@@ -59,7 +59,9 @@ class EarlyStopping:
             self.best_loss = val_loss
             self.best_step = step
             if self.verbose:
-                print(f"  [EarlyStopping] Step {step}: 최초 기록 (val_loss={val_loss:.4f})")
+                print(
+                    f"  [EarlyStopping] Step {step}: 최초 기록 (val_loss={val_loss:.4f})"
+                )
             return False
 
         if val_loss > self.best_loss - self.delta:
@@ -82,7 +84,9 @@ class EarlyStopping:
             self.best_step = step
             self.counter = 0
             if self.verbose:
-                print(f"  [EarlyStopping] Step {step}: 개선! 기록 (val_loss={val_loss:.4f})")
+                print(
+                    f"  [EarlyStopping] Step {step}: 개선! 기록 (val_loss={val_loss:.4f})"
+                )
 
         return False
 
@@ -106,6 +110,7 @@ def train(args):
     probe_ckpts = []
     if os.path.isdir(probe_ckpt_dir):
         import glob as _glob
+
         probe_ckpts = _glob.glob(os.path.join(probe_ckpt_dir, f"{pattern}*.pt"))
 
     if not probe_ckpts and not args.smoke_test:
@@ -116,14 +121,15 @@ def train(args):
         # 모든 프로세스가 같은 경로를 써야 하므로 broadcast
         if accelerator.num_processes > 1:
             import torch.distributed as dist
+
             path_bytes = effective_project_dir.encode()
             path_tensor = torch.tensor(
                 list(path_bytes) + [0] * (512 - len(path_bytes)), dtype=torch.uint8
             ).to(device)
             dist.broadcast(path_tensor, src=0)
-            effective_project_dir = bytes(
-                path_tensor.cpu().tolist()
-            ).rstrip(b"\x00").decode()
+            effective_project_dir = (
+                bytes(path_tensor.cpu().tolist()).rstrip(b"\x00").decode()
+            )
 
     ckpt_dir = os.path.join(effective_project_dir, "checkpoints")
     log_dir = os.path.join(effective_project_dir, "logs")
@@ -156,18 +162,23 @@ def train(args):
             print("✅ Gradient checkpointing 활성화 (활성화 메모리 ~4배 절감)")
 
     # FP32 연산이 필요한 구간에서 A100의 Tensor Core(TF32)를 적극 활용하도록 허용합니다. (속도 향상)
-    torch.set_float32_matmul_precision('high')
+    torch.set_float32_matmul_precision("high")
 
     # [H100 최적화] Compute Capability 9.0 이상일 경우 FP8 연산 자동 변환 (A100은 무시됨)
     if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 9:
         try:
             from torchao.float8 import convert_to_float8_training
+
             convert_to_float8_training(model)
             if accelerator.is_main_process:
-                print("⚡ H100 감지: FP8 Mixed Precision(torchao)이 자동 활성화되었습니다. (학습 속도 2.5배↑)")
+                print(
+                    "⚡ H100 감지: FP8 Mixed Precision(torchao)이 자동 활성화되었습니다. (학습 속도 2.5배↑)"
+                )
         except ImportError:
             if accelerator.is_main_process:
-                print("⚠️ H100 GPU이지만 `torchao` 패키지가 없어 FP8 가속을 적용할 수 없습니다. (pip install torchao 권장)")
+                print(
+                    "⚠️ H100 GPU이지만 `torchao` 패키지가 없어 FP8 가속을 적용할 수 없습니다. (pip install torchao 권장)"
+                )
 
     # torch.compile — A100 BF16에서 +25~40% 처리량 (첫 step에 1~2분 컴파일)
     if args.compile:
@@ -180,24 +191,40 @@ def train(args):
     if accelerator.is_main_process:
         total_params = sum(p.numel() for p in model.parameters())
         emb_params = model.token_embeddings.weight.numel()
-        attn_params = sum(p.numel() for name, p in model.named_parameters() if "attention" in name)
-        ffn_params = sum(p.numel() for name, p in model.named_parameters() if "ffn" in name and "attention" not in name)
+        attn_params = sum(
+            p.numel() for name, p in model.named_parameters() if "attention" in name
+        )
+        ffn_params = sum(
+            p.numel()
+            for name, p in model.named_parameters()
+            if "ffn" in name and "attention" not in name
+        )
         lm_head_params = model.lm_head.weight.numel()
 
         print("-" * 50)
         print("Model Architecture Parameter Breakdown:")
-        print(f"  - Total Parameters:        {total_params:,} ({total_params / 1e6:.2f}M)")
+        print(
+            f"  - Total Parameters:        {total_params:,} ({total_params / 1e6:.2f}M)"
+        )
         print(f"  - d_model / n_layers:      {config.d_model} / {config.n_layers}")
         print(f"  - Token Embedding:         {emb_params:,} ({emb_params / 1e6:.2f}M)")
-        print(f"  - Attention ({config.n_layers} layers): {attn_params:,} ({attn_params / 1e6:.2f}M)")
-        print(f"  - FFN     ({config.n_layers} layers): {ffn_params:,} ({ffn_params / 1e6:.2f}M)")
-        print(f"  - LM Head (untied):        {lm_head_params:,} ({lm_head_params / 1e6:.2f}M)")
+        print(
+            f"  - Attention ({config.n_layers} layers): {attn_params:,} ({attn_params / 1e6:.2f}M)"
+        )
+        print(
+            f"  - FFN     ({config.n_layers} layers): {ffn_params:,} ({ffn_params / 1e6:.2f}M)"
+        )
+        print(
+            f"  - LM Head (untied):        {lm_head_params:,} ({lm_head_params / 1e6:.2f}M)"
+        )
         print("-" * 50)
 
     # 2. 학습 데이터 ——————————————————————————————————————————————
     train_npy = os.path.join(args.data_dir, "train.npy")
     if not os.path.exists(train_npy):
-        raise FileNotFoundError(f"Training dataset not found at {train_npy}. Run prepare_data.py first.")
+        raise FileNotFoundError(
+            f"Training dataset not found at {train_npy}. Run prepare_data.py first."
+        )
 
     # Google Drive FUSE → 로컬 SSD 복사 (mmap 랜덤 I/O 지연 제거)
     # /content/ 존재 시(Colab 환경) 로컬 SSD 사용, 아니면 원본 경로 유지
@@ -206,7 +233,9 @@ def train(args):
         local_train = os.path.join(local_cache, "_cached_train.npy")
         if not os.path.exists(local_train):
             if accelerator.is_main_process:
-                print(f"📋 학습 데이터를 로컬 SSD로 복사 중: {train_npy} → {local_train}")
+                print(
+                    f"📋 학습 데이터를 로컬 SSD로 복사 중: {train_npy} → {local_train}"
+                )
             shutil.copy2(train_npy, local_train)
             if accelerator.is_main_process:
                 print(f"✅ 복사 완료 ({os.path.getsize(local_train) / 1e9:.1f}GB)")
@@ -216,8 +245,12 @@ def train(args):
     batch_size = 2 if args.smoke_test else args.batch_size
     use_workers = 0 if args.smoke_test else 4
     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, drop_last=True,
-        num_workers=use_workers, pin_memory=torch.cuda.is_available(),
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=True,
+        num_workers=use_workers,
+        pin_memory=torch.cuda.is_available(),
         persistent_workers=(use_workers > 0),
     )
 
@@ -234,8 +267,12 @@ def train(args):
 
         val_dataset = NumpyDataset(val_npy)
         val_loader = DataLoader(
-            val_dataset, batch_size=batch_size * 2, shuffle=False, drop_last=False,
-            num_workers=use_workers, pin_memory=torch.cuda.is_available(),
+            val_dataset,
+            batch_size=batch_size * 2,
+            shuffle=False,
+            drop_last=False,
+            num_workers=use_workers,
+            pin_memory=torch.cuda.is_available(),
             persistent_workers=(use_workers > 0),
         )
         print(f"Loaded validation set: {len(val_dataset):,} blocks from {val_npy}")
@@ -271,7 +308,9 @@ def train(args):
     def lr_lambda(current_step):
         if current_step < warmup_steps:
             return float(current_step) / float(max(1, warmup_steps))
-        progress = float(current_step - warmup_steps) / float(max(1, max_steps - warmup_steps))
+        progress = float(current_step - warmup_steps) / float(
+            max(1, max_steps - warmup_steps)
+        )
         cosine_val = 0.5 * (1.0 + np.cos(np.pi * min(1.0, progress)))
         return min_lr_ratio + (1.0 - min_lr_ratio) * cosine_val
 
@@ -356,8 +395,15 @@ def train(args):
                 curr_loss_val = loss.item()
                 if prev_loss is not None and curr_loss_val > prev_loss * 1.2:
                     log_event(
-                        log_dir, args.run_id, "loss_spike",
-                        {"step": step, "previous_loss": prev_loss, "current_loss": curr_loss_val, "grad_norm": grad_norm},
+                        log_dir,
+                        args.run_id,
+                        "loss_spike",
+                        {
+                            "step": step,
+                            "previous_loss": prev_loss,
+                            "current_loss": curr_loss_val,
+                            "grad_norm": grad_norm,
+                        },
                     )
                 prev_loss = curr_loss_val
 
@@ -415,11 +461,28 @@ def train(args):
             if step % save_interval == 0 or step == max_steps:
                 accelerator.wait_for_everyone()
                 if accelerator.is_main_process:
-                    save_checkpoint(ckpt_dir, model, optimizer, scheduler, step, loss.item(), pattern)
-                    log_event(log_dir, args.run_id, "checkpoint", {"step": step, "loss": loss.item()})
+                    save_checkpoint(
+                        ckpt_dir,
+                        model,
+                        optimizer,
+                        scheduler,
+                        step,
+                        loss.item(),
+                        pattern,
+                    )
+                    log_event(
+                        log_dir,
+                        args.run_id,
+                        "checkpoint",
+                        {"step": step, "loss": loss.item()},
+                    )
 
             # Validation
-            if val_loader is not None and args.val_every > 0 and step % args.val_every == 0:
+            if (
+                val_loader is not None
+                and args.val_every > 0
+                and step % args.val_every == 0
+            ):
                 model.eval()
                 total_val_loss = 0.0
                 num_val_batches = 0
@@ -435,11 +498,15 @@ def train(args):
                 avg_val_ppl = np.exp(min(20, avg_val_loss))
 
                 if accelerator.is_main_process:
-                    print(f"  ▶ Validation: step {step} | val_loss={avg_val_loss:.4f} | val_ppl={avg_val_ppl:.2f}")
+                    print(
+                        f"  ▶ Validation: step {step} | val_loss={avg_val_loss:.4f} | val_ppl={avg_val_ppl:.2f}"
+                    )
 
                     if avg_val_loss < best_val_loss:
                         best_val_loss = avg_val_loss
-                        best_checkpoint_path = os.path.join(ckpt_dir, f"dense_{args.run_id}_best.pt")
+                        best_checkpoint_path = os.path.join(
+                            ckpt_dir, f"dense_{args.run_id}_best.pt"
+                        )
                         accelerator.wait_for_everyone()
                         uw = accelerator.unwrap_model(model)
                         torch.save(
@@ -454,17 +521,29 @@ def train(args):
                             best_checkpoint_path,
                         )
                         best_checkpoint_saved = True
-                        print(f"  ⭐ Best validation checkpoint saved (val_loss={avg_val_loss:.4f})")
+                        print(
+                            f"  ⭐ Best validation checkpoint saved (val_loss={avg_val_loss:.4f})"
+                        )
 
                     if args.wandb:
-                        wandb.log({"val/loss": avg_val_loss, "val/ppl": avg_val_ppl}, step=step)
+                        wandb.log(
+                            {"val/loss": avg_val_loss, "val/ppl": avg_val_ppl},
+                            step=step,
+                        )
 
-                    log_metrics(log_dir, args.run_id, step, {"val_loss": avg_val_loss, "val_ppl": avg_val_ppl})
+                    log_metrics(
+                        log_dir,
+                        args.run_id,
+                        step,
+                        {"val_loss": avg_val_loss, "val_ppl": avg_val_ppl},
+                    )
 
                 should_stop = early_stopping(avg_val_loss, step)
                 if should_stop:
                     if best_checkpoint_saved and best_checkpoint_path:
-                        final_path = os.path.join(ckpt_dir, f"dense_{args.run_id}_final_early_stop.pt")
+                        final_path = os.path.join(
+                            ckpt_dir, f"dense_{args.run_id}_final_early_stop.pt"
+                        )
                         shutil.copy2(best_checkpoint_path, final_path)
                         if accelerator.is_main_process:
                             print(f"  📦 Best checkpoint → {final_path} 복사 완료")
@@ -476,7 +555,11 @@ def train(args):
     if accelerator.is_main_process:
         print("Training complete!")
 
-        if val_loader is not None and not early_stopping.early_stop and best_checkpoint_saved:
+        if (
+            val_loader is not None
+            and not early_stopping.early_stop
+            and best_checkpoint_saved
+        ):
             print(
                 f"Early Stopping 미발동. Best checkpoint "
                 f"(step {early_stopping.best_step}, val_loss={early_stopping.best_loss:.4f})이 "
@@ -500,38 +583,78 @@ def train(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run_id", type=str, required=True, help="Unique run ID (e.g. v8_720m)")
-    parser.add_argument("--name", type=str, default="dense_baseline", help="Description name")
+    parser.add_argument(
+        "--run_id", type=str, required=True, help="Unique run ID (e.g. v8_720m)"
+    )
+    parser.add_argument(
+        "--name", type=str, default="dense_baseline", help="Description name"
+    )
     parser.add_argument("--data_dir", type=str, default="train/data")
     parser.add_argument("--tokenizer_dir", type=str, default="tokenizer/output")
-    parser.add_argument("--project_dir", type=str, default="drive_mock",
-                        help="저장 루트. 신규 학습 시 KST 타임스탬프 서브폴더 자동 생성. "
-                             "재개 시 타임스탬프 폴더까지 포함한 전체 경로 지정.")
-    parser.add_argument("--batch_size", type=int, default=8,
-                        help="per-device micro-batch (실효 배치 = batch_size × grad_accum)")
-    parser.add_argument("--grad_accum", type=int, default=1,
-                        help="gradient accumulation steps (메모리 절약용 micro-batch 반복)")
-    parser.add_argument("--grad_checkpoint", action="store_true",
-                        help="gradient checkpointing 활성화 (활성화 메모리 ~4배 절감, 속도 -25%%)")
-    parser.add_argument("--compile", action="store_true",
-                        help="torch.compile 활성화 (학습 속도 +25~40%%, 첫 step에 1~2분 컴파일 소요)")
+    parser.add_argument(
+        "--project_dir",
+        type=str,
+        default="drive_mock",
+        help="저장 루트. 신규 학습 시 KST 타임스탬프 서브폴더 자동 생성. "
+        "재개 시 타임스탬프 폴더까지 포함한 전체 경로 지정.",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=8,
+        help="per-device micro-batch (실효 배치 = batch_size × grad_accum)",
+    )
+    parser.add_argument(
+        "--grad_accum",
+        type=int,
+        default=1,
+        help="gradient accumulation steps (메모리 절약용 micro-batch 반복)",
+    )
+    parser.add_argument(
+        "--grad_checkpoint",
+        action="store_true",
+        help="gradient checkpointing 활성화 (활성화 메모리 ~4배 절감, 속도 -25%%)",
+    )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="torch.compile 활성화 (학습 속도 +25~40%%, 첫 step에 1~2분 컴파일 소요)",
+    )
     parser.add_argument("--block_size", type=int, default=2048)
     parser.add_argument("--lr", type=float, default=3e-4)
-    parser.add_argument("--min_lr", type=float, default=3e-5, help="Cosine decay 최소 LR")
+    parser.add_argument(
+        "--min_lr", type=float, default=3e-5, help="Cosine decay 최소 LR"
+    )
     parser.add_argument("--weight_decay", type=float, default=0.1)
     parser.add_argument("--grad_clip", type=float, default=1.0)
-    parser.add_argument("--epochs", type=int, default=None, help="에폭 수 (설정 시 max_steps 무시)")
+    parser.add_argument(
+        "--epochs", type=int, default=None, help="에폭 수 (설정 시 max_steps 무시)"
+    )
     parser.add_argument("--max_steps", type=int, default=40000)
     parser.add_argument("--save_every", type=int, default=1000)
     parser.add_argument("--log_every", type=int, default=100)
     parser.add_argument("--warmup_steps", type=int, default=2000)
-    parser.add_argument("--dropout", type=float, default=0.0, help="사전학습=0.0, SFT=0.05")
-    parser.add_argument("--val_every", type=int, default=1000,
-                        help="몇 step마다 validation 실행 (0이면 스킵)")
-    parser.add_argument("--patience", type=int, default=8,
-                        help="val_loss 개선 없이 기다릴 횟수 (val_every 단위)")
-    parser.add_argument("--min_delta", type=float, default=1e-3,
-                        help="개선으로 인정할 최소 val_loss 변화량")
+    parser.add_argument(
+        "--dropout", type=float, default=0.0, help="사전학습=0.0, SFT=0.05"
+    )
+    parser.add_argument(
+        "--val_every",
+        type=int,
+        default=1000,
+        help="몇 step마다 validation 실행 (0이면 스킵)",
+    )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=8,
+        help="val_loss 개선 없이 기다릴 횟수 (val_every 단위)",
+    )
+    parser.add_argument(
+        "--min_delta",
+        type=float,
+        default=1e-3,
+        help="개선으로 인정할 최소 val_loss 변화량",
+    )
     parser.add_argument("--smoke_test", action="store_true")
     parser.add_argument("--wandb", action="store_true", help="W&B 클라우드 로깅 활성화")
 
